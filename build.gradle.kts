@@ -21,6 +21,13 @@ allprojects {
     plugins.withId("maven-publish") {
         extensions.configure<PublishingExtension> {
             repositories {
+                // 离线分发仓：产物发到 <仓>/dist/maven-repo（标准 Maven 目录布局），
+                // 可直接 maven { url = uri(".../dist/maven-repo") } 消费，或整目录拷进 ~/.m2。
+                // 与 GitHub Packages 并存：前者免认证/可内网分发，后者是公网坐标。
+                maven {
+                    name = "dist"
+                    url = uri(rootProject.layout.projectDirectory.dir("dist/maven-repo").asFile.toURI())
+                }
                 val ghToken = System.getenv("GITHUB_TOKEN")
                 if (!ghToken.isNullOrBlank()) {
                     maven {

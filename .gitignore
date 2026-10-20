@@ -3,6 +3,9 @@
 build/
 !gradle/wrapper/gradle-wrapper.jar
 
+# 离线分发件（构建产物：本地 Maven 仓目录 + zip）
+dist/
+
 # 机器本地配置（含本机 Android SDK 路径，不入仓）
 local.properties
 
