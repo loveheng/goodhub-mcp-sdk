@@ -1,9 +1,11 @@
 package com.zzh.goodhub.mcp.plugin
 
+import com.zzh.goodhub.mcp.IMcpCallback
 import com.zzh.goodhub.mcp.IMcpChannel
 import com.zzh.goodhub.mcp.McpContract
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -144,5 +146,24 @@ class ToolDispatcherTest {
         val stub = p.onBind(null) as IMcpChannel.Stub
         val res = JSONObject(stub.call("""{"jsonrpc":"2.0","id":1,"method":"initialize"}"""))
         assertEquals(McpContract.MCP_PROTOCOL_VERSION, res.getJSONObject("result").getString("protocolVersion"))
+    }
+
+    /** 可观测性替身：子类自己持宿主回调引用时用 tryEmitEvent 取成败。 */
+    class EmitPlugin : GoodHubPluginService("emit", "Emit 插件") {
+        fun tryPush(json: String): Boolean = tryEmitEvent(json)
+    }
+
+    @Test
+    fun `tryEmitEvent 回报推送成败`() {
+        val p = EmitPlugin()
+        val stub = p.onBind(null) as IMcpChannel.Stub
+        // 宿主回调未注册 → 推送失败（false），供子类打 [DEGRADE] 日志（终帧推不出=宿主侧悬挂）
+        assertFalse("宿主回调未注册时必须回报失败，不得静默", p.tryPush("""{"n":1}"""))
+
+        val cb = object : IMcpCallback.Stub() {
+            override fun onEvent(jsonRpcMessage: String) = Unit
+        }
+        stub.registerCallback(cb)
+        assertTrue("回调已注册且投递成功时必须回报成功", p.tryPush("""{"n":2}"""))
     }
 }

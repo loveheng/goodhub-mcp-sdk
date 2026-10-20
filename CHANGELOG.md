@@ -2,6 +2,18 @@
 
 本文件记录 `goodhub-mcp-sdk` 的对外可见变更。契约破坏性变更必须在此标注并同步升 `CONTRACT_VERSION`。
 
+## 0.1.1（2026-10-20）
+
+### 新增
+- `GoodHubPluginService.tryEmitEvent(String): Boolean`——推事件帧并回报成败（true=已投递 / false=宿主回调未注册或投递抛异常）。
+  动机：`emitEvent` 内部静默吞掉投递异常，会吞掉「终帧推不出去」这个必须可观测的降级信号
+  （终帧推不出 = 宿主侧悬挂，只能靠 goodhub 的 idle 超时兜底）。Dart 业务层宿主用本方法即可
+  保留自己的 `[DEGRADE]` 日志能力。
+
+### 说明
+- 契约未变（`contract_version` 仍为 v1，`mcp_protocol_version` 仍为 2025-06-18，AIDL 包名与发现约定四常量不变）
+- 本版为纯增量：向后兼容 0.1.0，宿主/插件可按需升级
+
 ## 0.1.0（2026-10-20）
 
 首个独立发布版。来源：goodhub 仓 `android-sdk/` 目录拆分独立成仓（构建期本就零耦合，拆分不改行为）。

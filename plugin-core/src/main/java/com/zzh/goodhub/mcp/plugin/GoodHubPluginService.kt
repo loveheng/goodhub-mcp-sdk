@@ -70,8 +70,32 @@ abstract class GoodHubPluginService(
     /**
      * 子类向宿主推事件帧（`notifications/progress` / `_async` 终帧 / 反向请求帧）。
      * 与 [McpToolContext] 内部用的是同一条通道（`IMcpCallback.onEvent`，oneway）。
+     *
+     * 注意：投递异常在本方法内被静默吞掉（回调断连由宿主 DeathRecipient 感知）。
+     * 需要「推送失败」可观测（打 [DEGRADE] 日志、防终帧悬挂无从察觉）时，
+     * 请用 [tryEmitEvent] 取返回值。
      */
     protected fun emitEvent(jsonRpcMessage: String) = pushEvent(jsonRpcMessage)
+
+    /**
+     * 推事件帧并回报结果（供子类做可观测性兜底）。
+     *
+     * @return true = 已投递成功；false = 宿主回调未注册，或投递抛异常（宿主回调断连）。
+     *
+     * 何时用：子类自己持一份宿主回调引用（为了做「回调是否在线」判定）时，
+     * 直接调 `onEvent` 会被 SDK 吞掉异常，丢失「推帧失败」信号；
+     * 用本方法可拿到成败，用于打 [DEGRADE] 日志（终帧推不出去 = 宿主侧悬挂，
+     * 只能靠 goodhub 的 idle 超时兜底，属必须可观测的降级路径）。
+     */
+    protected fun tryEmitEvent(jsonRpcMessage: String): Boolean {
+        val cb = callback ?: return false
+        return try {
+            cb.onEvent(jsonRpcMessage)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
 
     private val binder = object : IMcpChannel.Stub() {
         override fun call(jsonRpcRequest: String): String {
