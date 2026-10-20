@@ -48,7 +48,7 @@ class FlashlightMcpPlugin : GoodHubPluginService(
 
 ## 2. 接入方式
 
-### 2.1 Maven（推荐，一次引包）
+### 2.1 Maven 坐标（已发布）
 
 ```kotlin
 dependencies {
@@ -58,9 +58,50 @@ dependencies {
 
 `:contract` 随 `api` 依赖传递引入，无需单独声明。
 
-> 远端仓库尚未开通；当前可先 `./gradlew publishToMavenLocal` 后用 `mavenLocal()` 消费。
+仓库地址：`https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk`（GitHub Packages，由 `v0.1.0` tag 触发 CI 发布）。
 
-### 2.2 本地 AAR（无远端仓库时的过渡方式）
+**GitHub Packages 的 Maven 端点强制要求认证**（匿名拉取返回 401），消费方需在构建脚本里带凭证：
+
+```kotlin
+repositories {
+    maven {
+        url = uri("https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR") ?: "你的 GitHub 用户名"
+            password = System.getenv("GITHUB_TOKEN") ?: ""   // PAT，scope 至少 read:packages
+        }
+    }
+}
+```
+
+### 2.2 离线分发件（免认证，推荐内网/无 token 场景）
+
+`./scripts/dist.sh` 产出一个**标准 Maven 目录布局**的目录与压缩包，拷到任意机器即可用，无需任何凭证：
+
+```
+dist/maven-repo/                    ← 直接当 file 仓消费
+dist/goodhub-mcp-sdk-0.1.0.zip      ← 同一份内容的压缩包
+```
+
+```kotlin
+repositories {
+    maven { url = uri("/path/to/dist/maven-repo") }   // 解压后的目录
+}
+```
+
+或把整个 `maven-repo` 目录拷进 `~/.m2/repository`（标准路径布局，Gradle 自动识别）。
+
+### 2.3 本地 Maven 仓（同机开发）
+
+```bash
+./gradlew publishToMavenLocal
+```
+
+```kotlin
+repositories { mavenLocal() }
+```
+
+### 2.4 手工引 AAR（无仓库环境）
 
 ```kotlin
 dependencies {
