@@ -60,7 +60,7 @@ dependencies {
 
 仓库地址：`https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk`（GitHub Packages，由 `v0.1.0` tag 触发 CI 发布）。
 
-**GitHub Packages 的 Maven 端点强制要求认证**（匿名拉取返回 401），消费方需在构建脚本里带凭证：
+包本身**已是公开**（从公开仓发布，继承仓可见性；匿名可打开包详情页）。但 GitHub Packages 的 Maven 端点**对公开包同样强制要求认证**（官方原文：public 包也需要 access token 才能 install），匿名拉取返回 401 —— 所以消费方仍需带凭证：
 
 ```kotlin
 repositories {
