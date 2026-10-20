@@ -4,6 +4,7 @@ import com.zzh.goodhub.mcp.plugin.GoodHubPluginService
 import com.zzh.goodhub.mcp.plugin.McpTool
 import com.zzh.goodhub.mcp.plugin.McpToolContext
 import com.zzh.goodhub.mcp.plugin.Param
+import com.zzh.goodhub.mcp.plugin.ToolVisibility
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -16,10 +17,12 @@ class DummyPluginService : GoodHubPluginService(
     serverId = "dummy",
     serverTitle = "Dummy 测试插件"
 ) {
-    @McpTool(description = "原样回显输入文本")
+    // visibility = SHARED：声明本工具可被宿主收进共享面（纯标记，SDK 不据此剔除或拦截）
+    @McpTool(description = "原样回显输入文本", readOnlyHint = true, visibility = ToolVisibility.SHARED)
     fun echo(@Param("text", description = "要回显的文本") text: String): String = text
 
-    @McpTool(description = "两个整数相加")
+    // 未标 visibility → 默认 PRIVATE（default-deny），宿主侧按此对照验证私有工具的分桶行为
+    @McpTool(description = "两个整数相加", readOnlyHint = true)
     fun add(
         @Param("a", description = "加数") a: Int,
         @Param("b", description = "被加数") b: Int

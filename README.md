@@ -140,6 +140,7 @@ contract/build/outputs/aar/goodhub-mcp-contract-release.aar
 | 进度推送 | `McpToolContext.progress()` 推 `notifications/progress`（带 `progressToken`） |
 | 反向请求 | `McpToolContext.reverseRequest()` 发 server→client 请求（如 `sampling/createMessage`），经 `answerReverse` 回程闭环 |
 | 命名不上仲裁 | SDK 只上报构造入参的 `serverId`，不做包名拼接、不做命名主权仲裁（属宿主职责） |
+| 可见性标记 | `@McpTool(visibility = ToolVisibility.SHARED)` 声明工具可见性范围，下发到每个工具对象的 `_meta.goodhub.visibility`（默认 `PRIVATE` / default-deny）。**纯标记**：SDK 不据此剔除 `tools/list` 条目、不拦截任何 `tools/call`，如何聚合/分桶属宿主解析职责 |
 
 ### 已知缺口
 

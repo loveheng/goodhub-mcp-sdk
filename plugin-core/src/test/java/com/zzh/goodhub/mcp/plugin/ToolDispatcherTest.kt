@@ -16,7 +16,8 @@ import org.junit.Test
  *  1. `tools/list` 自动生成合规 Schema；
  *  2. `tools/call` 正确路由 + 入参 coerce；
  *  3. 业务异常隔离——业务方法抛出的异常必须转 -32603，绝不穿透 Binder 致宿主崩溃；
- *  4. 异步长任务立即回 `_async` 占位（不阻塞 Binder 事务）。
+ *  4. 异步长任务立即回 `_async` 占位（不阻塞 Binder 事务）；
+ *  5. 可见性标记纯声明：写进 `_meta.goodhub.visibility`，不剔除条目、不影响路由。
  */
 class ToolDispatcherTest {
 
@@ -37,6 +38,12 @@ class ToolDispatcherTest {
             ctx.progress(0.5, message = "一半了")
             ctx.complete("slow done")
         }
+
+        @McpTool(description = "可共享的只读查询", readOnlyHint = true, visibility = ToolVisibility.SHARED)
+        fun sharedRead(): String = "pub:read"
+
+        @McpTool(description = "可共享的破坏性操作", destructiveHint = true, visibility = ToolVisibility.SHARED)
+        fun sharedWipe(): String = "pub:wiped"
     }
 
     private fun dispatcher(): ToolDispatcher = ToolDispatcher(FakePlugin())
@@ -60,7 +67,7 @@ class ToolDispatcherTest {
             val t = tools.getJSONObject(i)
             t.getString("name") to t
         }
-        assertEquals(setOf("echo", "add", "boom", "slow"), byName.keys)
+        assertEquals(setOf("echo", "add", "boom", "slow", "sharedRead", "sharedWipe"), byName.keys)
 
         val echoSchema = byName.getValue("echo").getJSONObject("inputSchema")
         assertEquals("object", echoSchema.getString("type"))
@@ -77,6 +84,49 @@ class ToolDispatcherTest {
         val slowSchema = byName.getValue("slow").getJSONObject("inputSchema")
         assertEquals(0, slowSchema.getJSONObject("properties").length())
     }
+
+    @Test
+    fun `visibility 默认 PRIVATE 并按原样下发到 _meta goodhub`() {
+        val byName = toolsByName()
+        // 未标 visibility 的工具默认 private（default-deny），且照常出现在 tools/list 里
+        assertEquals("private", visibilityOf(byName.getValue("echo")))
+        assertEquals("private", visibilityOf(byName.getValue("add")))
+        // 显式标 SHARED 的工具下发 shared
+        assertEquals("shared", visibilityOf(byName.getValue("sharedRead")))
+        assertEquals("shared", visibilityOf(byName.getValue("sharedWipe")))
+    }
+
+    @Test
+    fun `visibility 是纯声明 不剔除 list 条目也不拦截 call`() {
+        val byName = toolsByName()
+        assertTrue("私有工具仍须出现在 tools/list（能力全集）", byName.containsKey("echo"))
+
+        val d = dispatcher()
+        val res = handle(d, """{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"echo","arguments":{"text":"x"}}}""")
+        val text = res.getJSONObject("result").getJSONArray("content").getJSONObject(0).getString("text")
+        assertEquals("echo:x", text)
+    }
+
+    @Test
+    fun `annotations 仅下发显式声明的 hint`() {
+        val byName = toolsByName()
+        assertTrue(byName.getValue("sharedRead").getJSONObject("annotations").getBoolean("readOnlyHint"))
+        assertTrue(byName.getValue("sharedWipe").getJSONObject("annotations").getBoolean("destructiveHint"))
+        assertFalse("未声明任何 hint 时不带 annotations 节点", byName.getValue("echo").has("annotations"))
+    }
+
+    /** 拉取 tools/list 并按 name 索引，供逐条断言（同一份视图书写屡次断言）。 */
+    private fun toolsByName(): Map<String, JSONObject> {
+        val res = handle(dispatcher(), """{"jsonrpc":"2.0","id":10,"method":"tools/list"}""")
+        val arr = res.getJSONObject("result").getJSONArray("tools")
+        return (0 until arr.length()).associate { i ->
+            val t = arr.getJSONObject(i)
+            t.getString("name") to t
+        }
+    }
+
+    private fun visibilityOf(tool: JSONObject): String =
+        tool.getJSONObject("_meta").getJSONObject("goodhub").getString("visibility")
 
     @Test
     fun `tools call 路由并 coerce 入参`() {

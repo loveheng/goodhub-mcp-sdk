@@ -17,6 +17,10 @@ import java.util.concurrent.Executors
  * T-sdk-2：`@McpTool(async = true)` 工具首参注入 [McpToolContext]，call 内立即回
  * `{"_async": true}`，真实结果经 ctx.complete/fail 异步投递（§1.2.2）；worker 线程
  * 隔离长任务，避免阻塞 Binder 事务（§1.2.3）。
+ *
+ * 可见性标记：`@McpTool(visibility = ...)` 经本类写入 tools/list 的 `_meta.goodhub.visibility`
+ * （详见 [ToolVisibility]）。该标记**不改变 tools/list 的条目数，也不拦截任何 tools/call**——
+ * 它是给宿主的声明，不是本 SDK 的访问控制。
  */
 internal class ToolDispatcher(private val service: GoodHubPluginService) {
 
@@ -32,7 +36,10 @@ internal class ToolDispatcher(private val service: GoodHubPluginService) {
         val name: String,
         val description: String,
         val method: java.lang.reflect.Method,
-        val params: List<ParamMeta>
+        val params: List<ParamMeta>,
+        val readOnlyHint: Boolean = false,
+        val destructiveHint: Boolean = false,
+        val visibility: ToolVisibility = ToolVisibility.PRIVATE
     )
 
     private val tools: List<ToolMeta> by lazy { scan() }
@@ -65,7 +72,12 @@ internal class ToolDispatcher(private val service: GoodHubPluginService) {
                     isContext = isContext
                 )
             }
-            result.add(ToolMeta(m.name, ann.description, m, params))
+            result.add(
+                ToolMeta(
+                    m.name, ann.description, m, params,
+                    ann.readOnlyHint, ann.destructiveHint, ann.visibility
+                )
+            )
         }
         return result
     }
@@ -130,6 +142,20 @@ internal class ToolDispatcher(private val service: GoodHubPluginService) {
                 put("name", t.name)
                 put("description", t.description)
                 put("inputSchema", inputSchema)
+                // MCP 标准 annotations（hints 语义）：只下发显式声明过的 hint，未声明即缺席。
+                if (t.readOnlyHint || t.destructiveHint) {
+                    put("annotations", JSONObject().apply {
+                        if (t.readOnlyHint) put("readOnlyHint", true)
+                        if (t.destructiveHint) put("destructiveHint", true)
+                    })
+                }
+                // GoodHub 私有标记：工具可见性范围。纯声明——本 SDK 不据此剔除
+                // tools/list 条目，也不影响 tools/call 路由，如何聚合全属宿主职责。
+                put("_meta", JSONObject().apply {
+                    put("goodhub", JSONObject().apply {
+                        put("visibility", t.visibility.wireName)
+                    })
+                })
             })
         }
         return successFrame(id, JSONObject().apply { put("tools", list) })

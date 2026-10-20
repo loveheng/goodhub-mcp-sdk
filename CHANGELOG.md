@@ -2,6 +2,26 @@
 
 本文件记录 `goodhub-mcp-sdk` 的对外可见变更。契约破坏性变更必须在此标注并同步升 `CONTRACT_VERSION`。
 
+## 0.2.0（2026-10-21）
+
+### 新增
+- `@McpTool` 新增 `visibility: ToolVisibility`（`PRIVATE` / `SHARED`，默认 `PRIVATE`）——工具**可见性范围**声明，
+  由派发器写入 `tools/list` 每个工具对象的 `_meta.goodhub.visibility`（线级取值小写短名 `"private"` / `"shared"`）。
+  **纯标记语义**：SDK 不据此剔除 `tools/list` 条目，也不拦截任何 `tools/call`——`tools/list` 始终反映 Server
+  能力全集（不制造「写了方法却查不到」的调试死角），按标记如何聚合、是否收进共享目录全属宿主解析职责。
+  默认 `PRIVATE` 即 default-deny：漏标即最严，与 explicit opt-in 原则一致。
+- `@McpTool` 新增 MCP 标准 annotation `readOnlyHint` / `destructiveHint`：仅当显式声明 `true` 时才下发
+  `annotations` 节点；两者都未声明则整个 `annotations` 缺席（hints 语义：未声明即无信息，不臆造 `false`）。
+- 标记与 hints 分轨：`annotations` 归还 MCP 官方字段，GoodHub 私有扩展一律走 `_meta.goodhub`，互不污染命名空间。
+
+### 变更
+- dummy 靶子：`echo` 标 `visibility = SHARED` + `readOnlyHint`；`add` 只标 `readOnlyHint`（保持默认 `PRIVATE`）；
+  `slowEcho` / `reverseDemo` 完全不标——三档组合供宿主侧对照验证分桶行为。
+
+### 说明
+- 契约未变（`contract_version` 仍为 v1，`mcp_protocol_version` 仍为 2025-06-18，AIDL 包名与方法集不变、发现约定四常量不变）
+- 向后兼容 0.1.1：三个新注解参数均有默认值，存量插件源码无需改动即可升级；宿主侧暂不消费 `_meta.goodhub` 时行为完全不变
+
 ## 0.1.1（2026-10-20）
 
 ### 新增
