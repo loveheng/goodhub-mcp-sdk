@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 构建 + 单测
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: android-actions/setup-android@v3
+
+      - name: 安装 Android SDK 组件
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: 构建三模块 + 单元测试
+        run: ./gradlew --console=plain :contract:assembleRelease :plugin-core:assembleRelease :sample-dummy-plugin:assembleDebug test
+
+      - name: 归档产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: goodhub-mcp-sdk
+          path: |
+            contract/build/outputs/aar/*.aar
+            plugin-core/build/outputs/aar/*.aar
+            sample-dummy-plugin/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  publish:
+    name: 发布到 GitHub Packages
+    needs: build
+    # 仅 tag 触发（版本唯一性：GitHub Packages 不允许重发同版本号）
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: android-actions/setup-android@v3
+
+      - name: 安装 Android SDK 组件
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: 校验 tag 版本与 VERSION 文件一致
+        run: |
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          FILE_VER=$(grep '^version=' VERSION | cut -d= -f2)
+          if [ "$TAG_VER" != "$FILE_VER" ]; then
+            echo "::error::tag 版本 $TAG_VER 与 VERSION 文件 $FILE_VER 不一致，先改 VERSION 再打 tag"
+            exit 1
+          fi
+
+      - name: 发布 AAR 到 GitHub Packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: >-
+          ./gradlew --console=plain
+          :contract:publishReleasePublicationToGitHubPackagesRepository
+          :plugin-core:publishReleasePublicationToGitHubPackagesRepository
