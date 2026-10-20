@@ -241,10 +241,14 @@ CI：`.github/workflows/ci.yml` 在每次 push / PR 上执行「构建 + 单测 
 
 ## 7. 与上游的关系
 
-| 角色 | 仓库 | 关系 |
-|---|---|---|
-| 宿主（client 端） | [goodhub](https://github.com/loveheng/goodhub) | 通过 `:contract` 的 AIDL 与本 SDK 通信；宿主侧另有连接生命周期与安全闸门职责 |
-| 同生态插件 | [goodshare](https://github.com/loveheng/goodshare) | 可直接引本 SDK 替代手写 AIDL（**推荐**：不要手搓 AIDL） |
+| 角色 | 仓库 | 关系 | 接入状态 |
+|---|---|---|---|
+| 宿主（client 端） | [goodhub](https://github.com/loveheng/goodhub) | 通过 `:contract` 的 AIDL 与本 SDK 通信；宿主侧另有连接生命周期与安全闸门职责 | **已接入**：宿主已删除自带 AIDL 副本，改经坐标 `com.zzh.goodhub.mcp:goodhub-mcp-contract` 消费（契约物理单副本） |
+| 同生态插件 | [goodshare](https://github.com/loveheng/goodshare) | 业务层在 Dart → 继承 `GoodHubPluginService` 并重写 `handleJsonRpc` 接管路由 | 迁移中：自拷 AIDL + 手写 Stub 待换成 SDK |
+| 同生态插件 | [shiguang](https://github.com/loveheng/shiguang) | 同上（另含 F1：tools/call 走 `_async` + onEvent 终帧切片） | 迁移中：同上 |
+
+> 迁移范式（Flutter 插件 App，业务层在 Dart）：**继承基类 + 重写 `handleJsonRpc` 接管全部路由**，
+> 其余 AIDL 语义（回调注册 / 反向请求回程 / 事件推送）由基类承载 —— 详见本文 §3 的接管方式。
 
 上游设计稿（跨仓只读）：GoodHub 仓 `docs/design/thirdconnect.md` §1.2（接入契约）/ §11（对外接入 SDK）。
 
