@@ -18,6 +18,8 @@ class FlashlightMcpPlugin : GoodHubPluginService(
 }
 ```
 
+> 若希望本服务可被宿主动态嵌入（注入到外部 LLM 会话 / workspace），构造时传 `mcpConsumable = true`；默认 `false`（default-deny）。详见下方「声明服务的可见性与动态嵌入」与 `api.md` §3.1 / §5.3 / §6。
+
 ```xml
 <service
     android:name=".FlashlightMcpPlugin"
@@ -52,13 +54,13 @@ class FlashlightMcpPlugin : GoodHubPluginService(
 
 ```kotlin
 dependencies {
-    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.1.0")
+    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.2.0")
 }
 ```
 
 `:contract` 随 `api` 依赖传递引入，无需单独声明。
 
-仓库地址：`https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk`（GitHub Packages，由 `v0.1.0` tag 触发 CI 发布）。
+仓库地址：`https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk`（GitHub Packages，由 `v0.2.0` tag 触发 CI 发布）。
 
 包本身**已是公开**（从公开仓发布，继承仓可见性；匿名可打开包详情页）。但 GitHub Packages 的 Maven 端点**对公开包同样强制要求认证**（官方原文：public 包也需要 access token 才能 install），匿名拉取返回 401 —— 所以消费方仍需带凭证：
 
@@ -80,7 +82,7 @@ repositories {
 
 ```
 dist/maven-repo/                    ← 直接当 file 仓消费
-dist/goodhub-mcp-sdk-0.1.0.zip      ← 同一份内容的压缩包
+dist/goodhub-mcp-sdk-0.2.0.zip      ← 同一份内容的压缩包
 ```
 
 ```kotlin
@@ -124,6 +126,47 @@ contract/build/outputs/aar/goodhub-mcp-contract-release.aar
 - [ ] Service 声明 meta-data `com.zzh.goodhub.SERVER_ID`（唯一 ID）与 `com.zzh.goodhub.SERVER_TITLE`（展示名）
 - [ ] 业务方法用 `@McpTool` 标注（返回 `String` / `Int` / `Boolean` / `Long` / `Float` / `Double`）
 - [ ] 超过 5s 的方法标 `@McpTool(async = true)`，用首参 `McpToolContext` 异步回报结果
+- [ ] 需对外暴露的工具标 `visibility = ToolVisibility.SHARED`，其余保持默认 `PRIVATE`（default-deny，漏标即最严）
+- [ ] 允许被宿主动态嵌入（注入外部 LLM 会话）的服务，构造传 `mcpConsumable = true`（默认 `false`，default-deny）
+
+### 声明服务的可见性与动态嵌入（插件开发者必读）
+
+GoodHub 提供**两级纯声明过滤网**，让你精确控制「哪些能力对外可见、是否可被宿主动态嵌入外部 LLM 会话」：
+
+| 层级 | 怎么声明 | 默认 | 含义 |
+|---|---|---|---|
+| Server 级 | `GoodHubPluginService(mcpConsumable = true)` | `false` | 整个服务是否允许被宿主**动态嵌入**（注入到外部 LLM 会话 / workspace） |
+| 工具级 | `@McpTool(visibility = ToolVisibility.SHARED)` | `PRIVATE` | 单个工具是否允许被收进宿主共享目录 / 对外暴露 |
+
+两者都是**纯声明、default-deny**（漏标即最严），SDK 不会因此剔除 `tools/list` 条目或拦截任何 `tools/call`——是否对外暴露完全由宿主（client 端）解析决定。
+
+**典型用法**：
+
+```kotlin
+class MyPlugin : GoodHubPluginService(
+    serverId = "myapp",
+    serverTitle = "我的工具",
+    mcpConsumable = true   // 声明：本服务允许被动态嵌入
+) {
+    // 仅这些标了 SHARED 的工具，才会进入宿主动态候选池
+    @McpTool(description = "原样回显", visibility = ToolVisibility.SHARED)
+    fun echo(@Param("text") text: String): String = text
+
+    // 保持默认 PRIVATE：仅本机/宿主私有调用，不进 LLM 动态视野
+    @McpTool(description = "敏感的内部清理")
+    fun cleanup(): String = "done"
+}
+```
+
+**两层正交，宿主动态嵌入选区通常是 AND**：`mcpConsumable == true` 且 `tool.visibility == SHARED` 才收进动态候选。
+- 只开 Server 级、工具全 `PRIVATE` → 没有工具可被注入。
+- 只标工具 `SHARED`、Server 未开 `mcpConsumable` → 宿主不会动态嵌入整个服务。
+
+**线级下发（SDK 自动，你无需处理）**：
+- `mcpConsumable` 随 `initialize` 应答恒下发于 `_meta.goodhub.mcpConsumable`（恒下发，不缺席）。
+- `visibility` 随 `tools/list` 各工具下发于 `_meta.goodhub.visibility`（缺省按 `"private"` 兜底）。
+
+**与跨平台 Manifest 的关系**：[`MANIFEST_SPEC.md`](./MANIFEST_SPEC.md) 中的 `mcpConsumable` / `coreTools` 字段，在 Android 上**直接由本 SDK 的构造参数与注解驱动**——你只写 Kotlin，无需手写 JSON Manifest；Manifest 在 Android 侧作为宿主的「路由加速索引」由工具链/宿主生成，开发者不必维护双份配置（避免 split-brain）。
 
 ---
 
@@ -148,6 +191,51 @@ contract/build/outputs/aar/goodhub-mcp-contract-release.aar
 |---|---|---|
 | `mcp-blob://` 大报文降级未实现 | 单次调用报文须 < 128KB，超过会触发 Binder 事务上限 | 自行分页，或改走标准 Streamable HTTP MCP 通道 |
 | Flutter 插件桥未实现 | Flutter 侧插件 App 无法直接引本 SDK | Flutter 插件请用 Kotlin 原生 Service 包装后接入 |
+
+> 机器可读的完整接口参考（注解字典 + 报文契约 + 职责边界）见 [`api.md`](./api.md)，面向 AI Agent 生成插件代码或对接宿主聚合层时以该文件为准。
+
+### `@McpTool` 注解字段参考
+
+| 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `description` | `String` | `""` | 工具描述，进入 `inputSchema.description`；建议填写，供宿主 / 外部 Agent 展示 |
+| `timeoutMs` | `Long` | `5000` | 同步调用预算红线（**仅元数据记录，当前不强制**）；超 5s 改用 `async` |
+| `async` | `Boolean` | `false` | `true` 时 `tools/call` 立即回 `{"_async": true}`，真实结果经 `McpToolContext` 异步投递 |
+| `readOnlyHint` | `Boolean` | `false` | MCP 标准 hint：本工具无副作用；仅 `true` 时下发 `annotations.readOnlyHint` |
+| `destructiveHint` | `Boolean` | `false` | MCP 标准 hint：本工具可能造成破坏性变更；仅 `true` 时下发 `annotations.destructiveHint` |
+| `visibility` | `ToolVisibility` | `PRIVATE` | **可见性范围标记（纯声明，详见下方「对外报文形态」）**：`PRIVATE`=默认、宿主不得收进共享目录；`SHARED`=允许聚合进共享面。SDK 不据此剔除条目 / 拦截调用 |
+
+用法示例：
+
+```kotlin
+@McpTool(
+    description = "原样回显",
+    readOnlyHint = true,
+    visibility = ToolVisibility.SHARED
+)
+fun echo(@Param("text") text: String): String = text
+```
+
+### 对外报文形态（`tools/list` 响应）
+
+SDK 实际下发的每个工具对象（节选）：
+
+```json
+{
+  "name": "echo",
+  "description": "原样回显",
+  "inputSchema": { "type": "object", "properties": { "text": { "type": "string" } } },
+  "annotations": { "readOnlyHint": true },
+  "_meta": { "goodhub": { "visibility": "shared" } }
+}
+```
+
+字段约定（宿主侧解析以本表为准）：
+
+- `visibility` 取值 `"private"`（默认）/ `"shared"`，位于 **`_meta.goodhub.visibility`**；**字段缺失时客户端按 `"private"` 兜底**
+- `annotations` 仅在工具显式声明 hint 时出现，且只含被声明的字段（**不臆造 `false`**）；无任何 hint 时整个 `annotations` 节点缺席——缺失 ≠ 有副作用
+- GoodHub 私有扩展统一收在 `_meta.goodhub` 下；未来 `hidden` 之类**正交**维度会加在 `goodhub` 同级
+- **纯声明语义**：SDK 不会因 `visibility` 剔除 `tools/list` 条目，也不会拦截任何 `tools/call`；私有工具照常可调用，是否对外暴露由宿主解析决定
 
 ### 业务层不在 Kotlin 时的接管方式（Dart / Flutter 插件）
 

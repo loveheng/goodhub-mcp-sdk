@@ -116,6 +116,13 @@ internal class ToolDispatcher(private val service: GoodHubPluginService) {
                 // 报 SDK 版本（非插件 App 版本）：宿主据此判断契约兼容度。
                 put("version", BuildConfig.SDK_VERSION)
             })
+            // Server 级自描述标记：恒下发（消除三态歧义），宿主直接映射非空布尔值。
+            // 与工具级 visibility 同处 `_meta.goodhub` 命名空间，但层级在 Server。
+            put("_meta", JSONObject().apply {
+                put("goodhub", JSONObject().apply {
+                    put("mcpConsumable", service.mcpConsumable)
+                })
+            })
         }
         return successFrame(id, result)
     }

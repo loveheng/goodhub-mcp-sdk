@@ -13,14 +13,24 @@
 - `@McpTool` 新增 MCP 标准 annotation `readOnlyHint` / `destructiveHint`：仅当显式声明 `true` 时才下发
   `annotations` 节点；两者都未声明则整个 `annotations` 缺席（hints 语义：未声明即无信息，不臆造 `false`）。
 - 标记与 hints 分轨：`annotations` 归还 MCP 官方字段，GoodHub 私有扩展一律走 `_meta.goodhub`，互不污染命名空间。
+- `GoodHubPluginService` 新增构造参数 `mcpConsumable: Boolean = false`——Server 级**自描述**标记，
+  声明本服务是否可被宿主动态嵌入（注入到外部 LLM 会话 / workspace）。随 `initialize` 应答**恒下发**
+  于 `_meta.goodhub.mcpConsumable`（默认 `false`，default-deny，与工具级 `visibility` 哲学一致）。
+  **纯声明、非访问控制**：本 SDK 不据此做任何拦截或剔除，是否据此动态注入全属宿主（client 端）职责。
 
 ### 变更
-- dummy 靶子：`echo` 标 `visibility = SHARED` + `readOnlyHint`；`add` 只标 `readOnlyHint`（保持默认 `PRIVATE`）；
+- dummy 靶子：构造显式 `mcpConsumable = true`，作为「可被动态嵌入」的联调示例；
+  `echo` 标 `visibility = SHARED` + `readOnlyHint`；`add` 只标 `readOnlyHint`（保持默认 `PRIVATE`）；
   `slowEcho` / `reverseDemo` 完全不标——三档组合供宿主侧对照验证分桶行为。
 
 ### 说明
 - 契约未变（`contract_version` 仍为 v1，`mcp_protocol_version` 仍为 2025-06-18，AIDL 包名与方法集不变、发现约定四常量不变）
 - 向后兼容 0.1.1：三个新注解参数均有默认值，存量插件源码无需改动即可升级；宿主侧暂不消费 `_meta.goodhub` 时行为完全不变
+
+### 文档
+- 新增 [`MANIFEST_SPEC.md`](./MANIFEST_SPEC.md)：《GoodHub MCP Manifest 跨平台语义规范 v1.0》。定义随包分发的静态语义契约（`serviceId` / `version` / `mcpConsumable` / `priority` / `keywords` / `regexPatterns` / `coreTools` 等），明确其**仅用于宿主本地 SQLite 路由与 LLM Context 装配、与传输层解耦**；并固化与现有 Android 运行时 SDK（`mcpConsumable` 构造参数、`visibility` 工具级标记）的映射关系，及 Split-Brain / iOS 传输 / 来源鉴权等 Open Issues。
+- 新增 [`IOS_TRANSPORT_DESIGN.md`](./IOS_TRANSPORT_DESIGN.md)：《iOS Transport 设计：形态 A/B 选型推演》。专项目标为 iOS 的"派发执行"传输后端：形态 A（In-Process/Framework，宿主内内存调用，性能/安全最优但生态封闭）与形态 B（App Group 共享容器总线 + Darwin Notification，与 Android 第三方接入模型对称、开放但需同 team 与 HMAC 签名）；给出选型矩阵、与 Android 接入模型对齐的约束、及渐进落地路径（先 A 作 MVP → 抽象 Transport Interface → 后补 B）。
+- `README.md` 新增「声明服务的可见性与动态嵌入（插件开发者必读）」教程章节，补全 `mcpConsumable`（Server 级）与 `visibility`（工具级）两级过滤网的接入指引、AND 选区语义、线级下发位置及与 [`MANIFEST_SPEC.md`](./MANIFEST_SPEC.md) 的关系；接入清单补 `mcpConsumable` 勾选项；`api.md` §2.2 最小示例补 `mcpConsumable = true` 构造演示。
 
 ## 0.1.1（2026-10-20）
 

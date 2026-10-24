@@ -15,7 +15,9 @@ import org.json.JSONObject
  */
 class DummyPluginService : GoodHubPluginService(
     serverId = "dummy",
-    serverTitle = "Dummy 测试插件"
+    serverTitle = "Dummy 测试插件",
+    // Server 级自描述：声明本靶子可被宿主动态嵌入（供将来动态工具注入联调）
+    mcpConsumable = true
 ) {
     // visibility = SHARED：声明本工具可被宿主收进共享面（纯标记，SDK 不据此剔除或拦截）
     @McpTool(description = "原样回显输入文本", readOnlyHint = true, visibility = ToolVisibility.SHARED)

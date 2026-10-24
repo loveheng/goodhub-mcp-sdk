@@ -23,7 +23,16 @@ import java.util.concurrent.atomic.AtomicLong
  */
 abstract class GoodHubPluginService(
     val serverId: String,
-    val serverTitle: String
+    val serverTitle: String,
+    /**
+     * Server 级自描述标记：声明本服务**是否可被宿主动态嵌入**（注入到外部 LLM 会话 / workspace）。
+     *
+     * 纯声明、非访问控制——本 SDK 不据此做任何拦截或剔除，是否据此动态注入全属宿主职责。
+     * 默认 `false`（default-deny，与工具级 [ToolVisibility.PRIVATE] 哲学一致）：存量 0.1.1 插件
+     * 必须显式声明 `true` 才会被倒灌进 LLM 动态候选池，避免意料外的 Token 消耗与路由干扰。
+     * 线级随 `initialize` 应答恒下发于 `_meta.goodhub.mcpConsumable`（见 [ToolDispatcher]）。
+     */
+    val mcpConsumable: Boolean = false
 ) : Service() {
 
     private val dispatcher = ToolDispatcher(this)

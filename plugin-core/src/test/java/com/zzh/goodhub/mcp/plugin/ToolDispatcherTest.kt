@@ -46,6 +46,12 @@ class ToolDispatcherTest {
         fun sharedWipe(): String = "pub:wiped"
     }
 
+    /** 显式声明可被动态嵌入的插件替身，验证 `mcpConsumable = true` 下发。 */
+    class ConsumablePlugin : GoodHubPluginService("c", "Consumable 插件", mcpConsumable = true) {
+        @McpTool(description = "可读")
+        fun read(): String = "r"
+    }
+
     private fun dispatcher(): ToolDispatcher = ToolDispatcher(FakePlugin())
 
     private fun handle(d: ToolDispatcher, json: String): JSONObject = JSONObject(d.handle(json))
@@ -57,6 +63,18 @@ class ToolDispatcherTest {
         assertEquals(McpContract.MCP_PROTOCOL_VERSION, result.getString("protocolVersion"))
         assertEquals("fake", result.getJSONObject("serverInfo").getString("name"))
         assertEquals("Fake 插件", result.getJSONObject("serverInfo").getString("title"))
+        // Server 级自描述标记恒下发（default-deny：FakePlugin 未声明 → false）
+        assertFalse(
+            result.getJSONObject("_meta").getJSONObject("goodhub").getBoolean("mcpConsumable")
+        )
+    }
+
+    @Test
+    fun `initialize 显式 mcpConsumable true 时恒下发 true`() {
+        val d = ToolDispatcher(ConsumablePlugin())
+        val res = handle(d, """{"jsonrpc":"2.0","id":1,"method":"initialize"}""")
+        val meta = res.getJSONObject("result").getJSONObject("_meta").getJSONObject("goodhub")
+        assertTrue("显式声明的插件须下发 true", meta.getBoolean("mcpConsumable"))
     }
 
     @Test
