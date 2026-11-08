@@ -54,13 +54,13 @@ class FlashlightMcpPlugin : GoodHubPluginService(
 
 ```kotlin
 dependencies {
-    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.2.0")
+    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.3.0")
 }
 ```
 
 `:contract` 随 `api` 依赖传递引入，无需单独声明。
 
-仓库地址：`https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk`（GitHub Packages，由 `v0.2.0` tag 触发 CI 发布）。
+仓库地址：`https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk`（GitHub Packages，由 `v0.3.0` tag 触发 CI 发布）。
 
 包本身**已是公开**（从公开仓发布，继承仓可见性；匿名可打开包详情页）。但 GitHub Packages 的 Maven 端点**对公开包同样强制要求认证**（官方原文：public 包也需要 access token 才能 install），匿名拉取返回 401 —— 所以消费方仍需带凭证：
 
@@ -82,7 +82,7 @@ repositories {
 
 ```
 dist/maven-repo/                    ← 直接当 file 仓消费
-dist/goodhub-mcp-sdk-0.2.0.zip      ← 同一份内容的压缩包
+dist/goodhub-mcp-sdk-0.3.0.zip      ← 同一份内容的压缩包
 ```
 
 ```kotlin

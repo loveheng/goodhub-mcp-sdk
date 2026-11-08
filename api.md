@@ -5,7 +5,7 @@
 > 2. 对接宿主（GoodHub）聚合层、解析 `tools/list` 报文（client 端）。
 >
 > 人类可读的接入指南见 [`README.md`](./README.md)。
-> SDK 当前版本：**0.2.0**（契约版本 `CONTRACT_VERSION = v1`，MCP 协议版本 `2025-06-18`）。
+> SDK 当前版本：**0.3.0**（契约版本 `CONTRACT_VERSION = v1`，MCP 协议版本 `2025-06-18`）。
 >
 > 跨平台静态语义契约（Manifest 规范，与传输层解耦）见 [`MANIFEST_SPEC.md`](./MANIFEST_SPEC.md)。
 
@@ -23,7 +23,7 @@ GoodHub 本地插件 SDK：第三方 Android App 继承 `GoodHubPluginService`�
 
 ```kotlin
 dependencies {
-    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.2.0")
+    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.3.0")
 }
 ```
 
@@ -168,7 +168,38 @@ class MyPlugin : GoodHubPluginService(
 
 ---
 
-## 7. 契约常量（冻结，勿改；宿主与插件共用）
+## 7. 端侧算力转发（`host/onDeviceComplete` · W6-a 联合态）
+
+插件（server 端）可借宿主 GoodHub 的**端侧**推理算力（与 `sampling/createMessage` 云端反向请求并存不互替），经 `McpToolContext.onDeviceComplete(...)` 调用，私有 method `host/onDeviceComplete`（Tier 1 契约）。
+
+### 7.1 联合态回执（`OnDeviceOutcome`）
+
+回程帧 `result.content.text` 经 `OnDeviceOutcome.parse` 解析为二态之一：
+
+| 形态 | 判据 | 承载 |
+|---|---|---|
+| **同步 immediate** | `content.text` 非「含 `execution_mode` 键的 JSON 对象」 | `Immediate(text)`——端侧直出纯文本 |
+| **异步 deferred** | `content.text` = `{"execution_mode":"deferred","task_id":"...","status":"queued","expiry_ms":86400000}` | `Deferred(taskId, status, expiryMs)`——冷态入池回执 |
+
+- **联合态装进现有 JSON 信封**：`:contract` AIDL 不动（`String call(String)` / oneway 事件面均不变），`contract_version` 仍为 `v1`。
+- **deferred 触发条件（三者同时满足）**：调用方显式 `allow_deferred = true` + 宿主任务池已装配 + 调用方身份可绑（内核 UID 推导，M5——无内核身份的 deferred 请求不受理）。
+- **缺省 `allow_deferred: false` = 存量语义零变化**：冷态（模型未装载/降级窗口）维持同步 failFast error 帧，宿主不兜底云端。
+- **`deferred` 回执缺 `task_id` = 宿主契约违约**：`parse` 抛 `IllegalArgumentException` 显式暴露，禁静默降级。
+- `expiry_ms` 为距过期的毫秒数（缺省 24h，>24h 未消化作废清账）；未携带时为 `-1`，不可作过期判据，以 status 查询结果为准。
+
+### 7.2 结果拉取（Pull = 交付真理源）
+
+拿到 `Deferred` 后：UI 呈现「后台分析中」占位，随后经 `McpToolContext.onDeviceTaskStatus(taskId)`（私有 method `host/onDeviceTaskStatus`）拉取任务投影（`status` ∈ `queued` / `running` / `done`（含 `result`）/ `expired` / `FAILED_EXHAUSTED` / `not_found`）。
+
+- **Pull 即交付**：宿主 `pendingDelivery` 态查询即置 `delivered` 并回结果；**严禁依赖 Push**——Android 12+ cgroup freezer 会吞发往冻结进程的 oneway 事件且发送方只见成功，Push（`IMcpCallback.onEvent`）仅是在途温热触达的 best-effort 加速。
+- `FAILED_EXHAUSTED`（回池重试 ≥3 毒丸死信）/ `expired` 对调用方**可见不可恢复**，UI 应收敛占位并提示。
+- 交付寻址绑定内核 UID 推导身份（M5）：A 插件不可见 B 的任务；status 查询按 callerKey 过滤。
+- **配额与计费**：per-caller 8 条 queued / 全局 64 条；**计费点 = 执行时**（产出才计，受理入池不计）。
+- ⚠️ **宿主接线现状**：`on_device_task_status` 目前仅实现于宿主导出工具面（网关 Allowlist）；Binder 反向通路 `host/onDeviceTaskStatus` 的接线属 goodhub 侧后续工作包——未接线版本调用会异常完成（宿主回落 sampling 错误帧），届时请回退 Push 事件面并保留 task_id 待宿主升级后补拉。
+
+---
+
+## 8. 契约常量（冻结，勿改；宿主与插件共用）
 
 | 项 | 值 |
 |---|---|
@@ -183,7 +214,7 @@ class MyPlugin : GoodHubPluginService(
 
 ---
 
-## 8. 职责边界（SDK 做 / 不做）
+## 9. 职责边界（SDK 做 / 不做）
 
 **SDK 做（server 端）**：实现 `IMcpChannel.Stub` + `GoodHubPluginService` 基类、反射生成 Schema + 路由、异常隔离、异步长任务、进度推送、反向请求发起。
 
@@ -191,8 +222,8 @@ class MyPlugin : GoodHubPluginService(
 
 ---
 
-## 9. 版本与消费
+## 10. 版本与消费
 
 - 版本事实源：[`VERSION`](./VERSION)（`version` / `mcp_protocol_version` / `contract_version`）。
-- 发布：GitHub Packages（`com.zzh.goodhub.mcp:goodhub-mcp-contract:0.2.0` / `:goodhub-mcp-plugin-core:0.2.0`）；或 `./scripts/dist.sh` 产免认证离线分发件。
+- 发布：GitHub Packages（`com.zzh.goodhub.mcp:goodhub-mcp-contract:0.3.0` / `:goodhub-mcp-plugin-core:0.3.0`）；或 `./scripts/dist.sh` 产免认证离线分发件。
 - 契约未变：`CONTRACT_VERSION` 仍为 `v1`，AIDL 包名与方法集不变，向后兼容 `0.1.1`。

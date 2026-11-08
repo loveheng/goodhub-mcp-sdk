@@ -2,6 +2,25 @@
 
 本文件记录 `goodhub-mcp-sdk` 的对外可见变更。契约破坏性变更必须在此标注并同步升 `CONTRACT_VERSION`。
 
+## 0.3.0（2026-11-07）
+
+### 新增
+- **W6-a 联合态解析面**：`McpToolContext.onDeviceComplete(instruction, input, allowDeferred, expiryMs)`——
+  借宿主端侧算力（私有 method `host/onDeviceComplete`，Tier 1 契约），回程统一解析为 `OnDeviceOutcome` 二态：
+  `Immediate`（同步产出文本）/ `Deferred`（冷态入池回执：`task_id`/`status`/`expiry_ms`）。
+  联合态装进现有 JSON 信封，`:contract` AIDL 不动（`contract_version` 仍为 `v1`）。
+- `McpToolContext.onDeviceTaskStatus(taskId)`——按 Pull 以 `task_id` 拉取入池任务投影
+  （私有 method `host/onDeviceTaskStatus`；**Pull = 交付真理源**，Push 不可依赖——freezer 吞 oneway）。
+  ⚠️ 宿主 Binder 反向通路对该 method 的接线属 goodhub 后续工作包，未接线版本会异常完成。
+- `api.md` 新增 §7「端侧算力转发」：联合态回执判定规则（`allow_deferred` 缺省 false = 存量语义零变化、
+  `expiry_ms` 语义、deferred 缺 `task_id` 抛错）、Pull 拉取纪律与配额/计费口径。
+
+### 说明
+- 契约未变（`contract_version` 仍为 v1，AIDL 包名与方法集不变）；缺省 `allow_deferred: false` 下
+  `onDeviceComplete` 行为与既有同步 failFast 语义一致，存量插件零影响。
+- 解析判定红线：`content.text` 仅当为含 `execution_mode` 键的 JSON 对象才判联合态，其余一律 Immediate
+  纯文本（禁 JSON 嗅探误判同步产出）。
+
 ## 0.2.0（2026-10-21）
 
 ### 新增
