@@ -18,3 +18,6 @@ local.properties
 .DS_Store
 Thumbs.db
 context/CURRENT
+
+# dev-loop 断点锁点（工具运行态产物，随 flock 自动创建，不入库）
+context/**/*.bp.lock
