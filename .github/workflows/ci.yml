@@ -9,8 +9,17 @@ on:
 
 jobs:
   build:
-    name: 构建 + 单测
+    name: 构建 + 单测 + 发布
     runs-on: ubuntu-latest
+
+    # 构建与发布同处一个 job：整个 run 只在一台 runner 上启动一次 Gradle，
+    # distribution 已解压在本地，发布步骤零下载。此前拆两个独立 job 时，
+    # publish runner 需二次从 GitHub Releases 下载 gradle-9.3.1-all.zip，
+    # HEAD 实测所有官方 URL 均 307 到该地址，重试与换镜像都无法绕开。
+    # packages: write 由下方 tag 门控步骤实际使用；main/PR 触发时该步骤跳过。
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
@@ -22,10 +31,10 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # wrapper 首次下载走 services.gradle.org → GitHub Releases，偶发 504（publish job
-      # 曾因此在 Gradle 启动前失败）。build/publish 是独立 runner，缓存未必命中，
-      # 故显式预热并重试；成功后 distribution 已入 wrapper 缓存，后续命令不再下载。
-      - name: 预热 Gradle distribution（瞬时 504 重试）
+      # wrapper 首次下载走 services.gradle.org → GitHub Releases，偶发 504。
+      # 单 job 只需这一次下载，显式预热并重试；成功后 distribution 入 wrapper
+      # 缓存，后续构建与发布命令均复用，不再触发下载。
+      - name: 预热 Gradle distribution（下载重试）
         run: |
           for i in 1 2 3 4; do
             if ./gradlew --version >/dev/null 2>&1; then
@@ -75,62 +84,10 @@ jobs:
             sample-dummy-plugin/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
-  publish:
-    name: 发布到 GitHub Packages
-    needs: build
-    # 仅 tag 触发（版本唯一性：GitHub Packages 不允许重发同版本号）
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      # wrapper 首次下载走 services.gradle.org → GitHub Releases，偶发 504（publish job
-      # 曾因此在 Gradle 启动前失败）。build/publish 是独立 runner，缓存未必命中，
-      # 故显式预热并重试；成功后 distribution 已入 wrapper 缓存，后续命令不再下载。
-      - name: 预热 Gradle distribution（瞬时 504 重试）
-        run: |
-          for i in 1 2 3 4; do
-            if ./gradlew --version >/dev/null 2>&1; then
-              echo "Gradle 就绪"
-              exit 0
-            fi
-            echo "::warning::Gradle distribution 下载失败，第 $i 次重试"
-            sleep 15
-          done
-          echo "::error::Gradle distribution 连续 4 次下载失败"
-          exit 1
-
-      # runner 自带 Android SDK（ubuntu-latest 预装 platforms/build-tools），不引入
-      # setup-android 动作：它每次要重下 cmdline-tools，失败面大且非必需。
-      # 这里只补齐缺失组件，缺了就在下面 ls 校验处硬失败（错误信息直指缺哪个）。
-      - name: 准备 Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls -1 "$ANDROID_HOME/platforms" 2>/dev/null || true
-          SDKMANAGER="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1 || true)"
-          if [ -z "$SDKMANAGER" ]; then
-            echo "::warning::未找到 sdkmanager，依赖 runner 预装 SDK"
-          else
-            yes | timeout 120 "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-            timeout 600 "$SDKMANAGER" "platforms;android-35" "build-tools;36.0.0" >/dev/null 2>&1 \
-              || echo "::warning::sdkmanager 安装组件失败，改用 runner 预装版本"
-          fi
-          ls -d "$ANDROID_HOME"/platforms/android-35 >/dev/null
-          ls -d "$ANDROID_HOME"/build-tools/36.0.0 >/dev/null
-
+      # 仅 tag push 执行（版本唯一性：GitHub Packages 不允许重发同版本号）。
+      # main / PR / workflow_dispatch 上 github.ref 不匹配，两步均跳过。
       - name: 校验 tag 版本与 VERSION 文件一致
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG_VER="${GITHUB_REF_NAME#v}"
           FILE_VER=$(grep '^version=' VERSION | cut -d= -f2)
@@ -140,6 +97,7 @@ jobs:
           fi
 
       - name: 发布 AAR 到 GitHub Packages
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
