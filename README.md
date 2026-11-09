@@ -343,7 +343,7 @@ export ANDROID_HOME="$HOME/android-sdk"
 ./gradlew publishToMavenLocal
 ```
 
-环境要求：JDK 17、Android SDK（compileSdk 35 / minSdk 34）、Gradle 9.3.1（wrapper 自带）。
+环境要求：JDK 21（CI 与本机实测通过；Gradle 9.3.1 要求 17+）、Android SDK（compileSdk 35 / minSdk 34）、Gradle 9.3.1（wrapper 自带）。
 
 CI：`.github/workflows/ci.yml` 在每次 push / PR 上执行「构建 + 单测 + 产物归档」。
 

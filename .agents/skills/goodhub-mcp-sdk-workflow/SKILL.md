@@ -29,7 +29,7 @@ description: goodhub-mcp-sdk（Android/Kotlin · Gradle 多模块 SDK）工作�
 
 ## 环境硬约束（现场实证）
 
-- **JDK**：CI `.github/workflows/ci.yml` 的 `setup-java` 步骤声明 17；本机实测 `java -version` = OpenJDK 21.0.12.1，且 `./gradlew --console=plain test` 在该 JDK 下跑通。JDK 17 本机未实测。
+- **JDK**：CI `.github/workflows/ci.yml` 的 `setup-java` 与本机均为 21（OpenJDK 21.0.12.1）；五模块 assemble + `./gradlew --console=plain test` 在该 JDK 下实测跑通。此前 CI 声明 17 时构建步骤失败且日志需 admin 权限不可读，故对齐到已实测环境。
 - **Gradle**：wrapper 自带发行版 9.3.1（`gradle/wrapper/gradle-wrapper.properties` 的 `distributionUrl`），无需独立安装。首次执行会下载发行版与依赖、写 `~/.gradle` 与各模块 `build/`；产物目录均被 `.gitignore` 忽略。
 - **Android SDK**：`ANDROID_HOME=/home/zzh/android-sdk`（环境变量已设），其 `platforms` 下 android-35 实测在位（`compileSdk 35 / minSdk 34`）。`local.properties` 是机器本地配置、不入仓；CI 另硬校验 `platforms;android-35` 与 `build-tools;36.0.0`，本机 build-tools 版本未逐一实测。
 - **单测是 JVM 单测**：`./gradlew test` 不依赖设备/模拟器；真机联调另需安装 GoodHub 宿主 App 与 sample APK（本轮未实测）。
