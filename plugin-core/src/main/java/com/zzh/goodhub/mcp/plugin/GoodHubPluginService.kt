@@ -96,7 +96,13 @@ abstract class GoodHubPluginService(
      * 用本方法可拿到成败，用于打 [DEGRADE] 日志（终帧推不出去 = 宿主侧悬挂，
      * 只能靠 goodhub 的 idle 超时兜底，属必须可观测的降级路径）。
      */
-    protected fun tryEmitEvent(jsonRpcMessage: String): Boolean {
+    protected fun tryEmitEvent(jsonRpcMessage: String): Boolean = tryPushEvent(jsonRpcMessage)
+
+    /**
+     * 同 [tryEmitEvent]，供 SDK 内部（[McpToolContext] 异步终帧）复用。
+     * 保持 `internal`：不把投递通道扩进第三方可见的公开 API 面。
+     */
+    internal fun tryPushEvent(jsonRpcMessage: String): Boolean {
         val cb = callback ?: return false
         return try {
             cb.onEvent(jsonRpcMessage)

@@ -40,8 +40,12 @@ jobs:
           ls -d "$ANDROID_HOME"/platforms/android-35 >/dev/null
           ls -d "$ANDROID_HOME"/build-tools/36.0.0 >/dev/null
 
-      - name: 构建三模块 + 单元测试
-        run: ./gradlew --console=plain :contract:assembleRelease :plugin-core:assembleRelease :sample-dummy-plugin:assembleDebug test
+      - name: 构建五模块 + 单元测试
+        run: >-
+          ./gradlew --console=plain
+          :contract:assembleRelease :plugin-core:assembleRelease
+          :goodhub-ai-client:assembleRelease :goodhub-ai-runtime:assembleRelease
+          :sample-dummy-plugin:assembleDebug test
 
       - name: 归档产物
         uses: actions/upload-artifact@v4
@@ -50,6 +54,8 @@ jobs:
           path: |
             contract/build/outputs/aar/*.aar
             plugin-core/build/outputs/aar/*.aar
+            goodhub-ai-client/build/outputs/aar/*.aar
+            goodhub-ai-runtime/build/outputs/aar/*.aar
             sample-dummy-plugin/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
@@ -109,3 +115,5 @@ jobs:
           ./gradlew --console=plain
           :contract:publishReleasePublicationToGitHubPackagesRepository
           :plugin-core:publishReleasePublicationToGitHubPackagesRepository
+          :goodhub-ai-client:publishReleasePublicationToGitHubPackagesRepository
+          :goodhub-ai-runtime:publishReleasePublicationToGitHubPackagesRepository

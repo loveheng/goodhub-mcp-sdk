@@ -30,13 +30,19 @@ VERSION="$(sed -n 's/^version=//p' "$ROOT/VERSION" 2>/dev/null | head -1)"
 echo "==> 发布到 $ROOT/dist/maven-repo（版本 $VERSION）"
 if ! (cd "$ROOT" && ./gradlew --console=plain \
       :contract:publishReleasePublicationToDistRepository \
-      :plugin-core:publishReleasePublicationToDistRepository); then
+      :plugin-core:publishReleasePublicationToDistRepository \
+      :goodhub-ai-client:publishReleasePublicationToDistRepository \
+      :goodhub-ai-runtime:publishReleasePublicationToDistRepository); then
   echo "[remedy] 看上方 gradle 输出；确认 VERSION 文件可读、dist 目录可写" >&2
   exit 1
 fi
 
-AAR="$ROOT/dist/maven-repo/com/zzh/goodhub/mcp/goodhub-mcp-contract/$VERSION/goodhub-mcp-contract-$VERSION.aar"
-[ -f "$AAR" ] || { echo "ERROR: 契约产物缺失：$AAR" >&2; exit 1; }
+# 四个工件齐全才算离线件可用（缺任一 AAR 都不能算「完整 SDK」）。
+REPO="$ROOT/dist/maven-repo/com/zzh/goodhub/mcp"
+for ARTIFACT in goodhub-mcp-contract goodhub-mcp-plugin-core goodhub-ai-client goodhub-ai-runtime; do
+  AAR="$REPO/$ARTIFACT/$VERSION/$ARTIFACT-$VERSION.aar"
+  [ -f "$AAR" ] || { echo "ERROR: 产物缺失：$AAR" >&2; exit 1; }
+done
 
 ZIP="$ROOT/dist/goodhub-mcp-sdk-$VERSION.zip"
 rm -f "$ZIP"

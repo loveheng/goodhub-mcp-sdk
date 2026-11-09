@@ -13,9 +13,8 @@ import org.json.JSONObject
  * 自动降级，Tier 2 零破坏）。
  *
  * 渲染纪律（MCP prompts 语义 + goodshare M2.5 同款）：`{{arg}}` 占位符
- * **字面替换、单次遍历不递归**；未知参数缺席 = 占位符保留（宿主 CoW 用
- * 「显式传参但 required 缺失 / 未知 name → -32602」契约，见 goodhub
- * ai-app-split §3.7）。
+ * **单次扫描字面替换、不递归**——参数值不参与后续匹配，防参数值里的
+ * `{{另一个参数}}` 被二次展开（模板注入）；未知占位符保留原文。
  */
 internal class PromptDispatcher(private val service: GoodHubPluginService) {
 
@@ -31,7 +30,7 @@ internal class PromptDispatcher(private val service: GoodHubPluginService) {
         val description: String,
         val method: java.lang.reflect.Method,
         val args: List<PromptArgMeta>,
-        val hasContext: Boolean,
+        val contextIndex: Int?,
     )
 
     // 装配期急扫描（fail-fast）：@McpPrompt 契约校验（PromptArg 须 String /
@@ -48,10 +47,13 @@ internal class PromptDispatcher(private val service: GoodHubPluginService) {
             val ann = m.getAnnotation(McpPrompt::class.java) ?: continue
             m.isAccessible = true
             val args = mutableListOf<PromptArgMeta>()
-            var hasContext = false
+            var contextIndex: Int? = null
             m.parameters.forEachIndexed { idx, p ->
                 if (p.type == McpToolContext::class.java) {
-                    hasContext = true
+                    require(contextIndex == null) {
+                        "@McpPrompt 方法 ${m.name} 声明了多个 McpToolContext 参数"
+                    }
+                    contextIndex = idx
                     return@forEachIndexed
                 }
                 val pa = p.getAnnotation(PromptArg::class.java)
@@ -77,16 +79,27 @@ internal class PromptDispatcher(private val service: GoodHubPluginService) {
                     "@McpPrompt 方法 ${m.name} 须返回 String（单条 user 消息模板文本）"
                 )
             }
-            result.add(PromptMeta(ann.name.takeIf { it.isNotEmpty() } ?: m.name, ann.description, m, args, hasContext))
+            result.add(
+                PromptMeta(
+                    ann.name.takeIf { it.isNotEmpty() } ?: m.name,
+                    ann.description,
+                    m,
+                    args,
+                    contextIndex,
+                )
+            )
         }
         // prompts/list 契约确定性：按 name 排序下发（反射扫描顺序不定）。
         result.sortBy { it.name }
         return result
     }
 
-    /** capabilities 块（有 prompt 才声明——宿主能力协商消费）。 */
-    fun capabilities(): JSONObject? =
-        if (hasPrompts) JSONObject().put("prompts", JSONObject()) else null
+    /**
+     * prompts capability 的内容对象（MCP 标准：`capabilities.prompts = {}` 或含
+     * `listChanged` 的对象）。由 [ToolDispatcher] 以 `put("prompts", it)` 挂到
+     * capabilities 上——本方法**不得**再自带 `prompts` 键，否则线级变成双层嵌套。
+     */
+    fun capabilities(): JSONObject? = if (hasPrompts) JSONObject() else null
 
     /** prompts/list + prompts/get 分派；非本面 method 或能力未声明返回 null（调用方回落 -32601）。 */
     fun handle(method: String, id: Any?, req: JSONObject): String? {
@@ -125,21 +138,23 @@ internal class PromptDispatcher(private val service: GoodHubPluginService) {
         val given = req.optJSONObject("params")?.optJSONObject("arguments") ?: JSONObject()
 
         // 缺 required 参数 → -32602（ai-app-split §3.7 契约：显式传参但 required 缺失拒绝）
-        val invokerArgs = mutableListOf<Any?>()
         for (a in meta.args) {
-            val v = given.optString(a.name, "")
-            if (v.isEmpty()) {
-                return errorFrame(id, McpErrors.INVALID_PARAMS, "缺 arguments.$a.name（prompt: $name）")
+            if (given.optString(a.name, "").isEmpty()) {
+                return errorFrame(id, McpErrors.INVALID_PARAMS, "缺 arguments.${a.name}（prompt: $name）")
             }
-            invokerArgs.add(v)
         }
-        if (meta.hasContext) invokerArgs.add(0, McpToolContext(service, id, null))
 
-        // 模板渲染（注解契约）：方法产出模板文本 → `{{arg}}` 占位符**字面替换、
-        // 单次遍历不递归**（MCP prompts 语义 + goodshare M2.5 同款）。
-        var text = invoke(meta, invokerArgs)
-        for (a in meta.args) {
-            text = text.replace("{{" + a.name + "}}", given.optString(a.name, ""))
+        // 按方法真实形参顺序组装：@PromptArg 用原始 paramIndex 落位，
+        // McpToolContext 注入到声明位置（可非首位），禁硬编码 add(0, ctx)。
+        val invokerArgs = arrayOfNulls<Any?>(meta.method.parameterTypes.size)
+        for (a in meta.args) invokerArgs[a.paramIndex] = given.optString(a.name, "")
+        meta.contextIndex?.let { invokerArgs[it] = McpToolContext(service, id, null) }
+
+        // 单次扫描替换：替换值不参与后续匹配（不递归）；未声明占位符保留原文。
+        val declared = meta.args.map { it.name }.toSet()
+        val text = PLACEHOLDER.replace(invoke(meta, invokerArgs)) { match ->
+            val key = match.groupValues[1]
+            if (key in declared) given.optString(key, match.value) else match.value
         }
         return successFrame(
             id,
@@ -155,8 +170,8 @@ internal class PromptDispatcher(private val service: GoodHubPluginService) {
         )
     }
 
-    private fun invoke(meta: PromptMeta, args: List<Any?>): String = try {
-        meta.method.invoke(service, *args.toTypedArray()) as String
+    private fun invoke(meta: PromptMeta, args: Array<Any?>): String = try {
+        meta.method.invoke(service, *args) as String
     } catch (e: java.lang.reflect.InvocationTargetException) {
         throw (e.cause ?: e)
     }
@@ -174,4 +189,8 @@ internal class PromptDispatcher(private val service: GoodHubPluginService) {
             put("id", id ?: JSONObject.NULL)
             put("error", JSONObject().apply { put("code", code); put("message", message) })
         }.toString()
+
+    private companion object {
+        val PLACEHOLDER = Regex("""\{\{([^{}]+)\}\}""")
+    }
 }

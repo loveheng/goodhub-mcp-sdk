@@ -1,7 +1,7 @@
 # AI Agent 接入手册（GoodHub 对外 AI 算力 · Onboarding）
 
 > **读者**：要把 GoodHub 的 AI 算力接入自己项目的 AI Agent / 开发者。本手册是**端到端步骤型**入口：前置条件 → 三步接入 → 机械验收 → 常见坑。细节单源：API 形状 = [api.md](./api.md)（§8 契约 / §9 消费方门面）；接入后规范 = [AI_INTEGRATION_GUIDE.md](./AI_INTEGRATION_GUIDE.md)。禁复制正文的指针纪律对 AI 同样适用。
-> 状态：v1（2026-11-09，随 SDK 0.5.1；真机全链验证 = goodhub `integration_test/ai_complete_e2e_test.dart` + goodshare 消费端真推理取证）。
+> 状态：v1（2026-11-09，随 SDK **0.6.0**；真机全链验证 = goodhub `integration_test/ai_complete_e2e_test.dart` + goodshare 消费端真推理取证）。
 
 ## 0. 我能获得什么
 
@@ -30,12 +30,12 @@ GoodHub 宿主对外输出一个推理原语 **`ai/complete(instruction, input, 
 
 ## 2. 三步接入（Android · Kotlin）
 
-### 步骤 1：依赖（约 0.5.1 起）
+### 步骤 1：依赖（0.6.0）
 
 ```kotlin
 dependencies {
-    implementation("com.zzh.goodhub.mcp:goodhub-ai-client:0.5.1")  // API 面
-    runtimeOnly("com.zzh.goodhub.mcp:goodhub-ai-runtime:0.5.1")    // 实现件（零显式初始化）
+    implementation("com.zzh.goodhub.mcp:goodhub-ai-client:0.6.0")  // API 面
+    runtimeOnly("com.zzh.goodhub.mcp:goodhub-ai-runtime:0.6.0")    // 实现件（零显式初始化）
 }
 ```
 
@@ -131,4 +131,4 @@ curl -s http://<手机IP>:8766/mcp -X POST \
 | goodhub 仓 `docs/design/ai-capability-export.md` | 设计 SSOT（架构 / 处理模型 / 里程碑对账） |
 | goodshare 仓 `docs/design/ai-app-split.md` §3.13 | 接缝裁决（与 sampling / 退役私有 method 的关系） |
 
-版本要求：SDK **0.5.1+**（`ai/complete` 收编后形态）｜宿主 ≥ 收编版构建｜AIDL 契约 `v1`（发现四常量冻结）｜MCP 协议 `2025-06-18`。
+版本要求：SDK **0.6.0+**（`ai/complete` 收编后形态）｜宿主 ≥ 收编版构建｜AIDL 契约 `v1`（发现四常量冻结）｜MCP 协议 `2025-06-18`。

@@ -93,10 +93,14 @@ internal class ToolDispatcher(private val service: GoodHubPluginService) {
     }
 
     fun handle(requestJson: String): String {
+        // id 提到 try 外：派发/解析层异常兜成 -32603 时仍须回显原请求 id，
+        // 否则宿主按 id 关联的 completer 悬挂（JSON-RPC 要求 error.id == request.id）。
+        var requestId: Any? = null
         return try {
             val req = JSONObject(requestJson)
             val method = req.optString("method", "")
             val id = req.opt("id")
+            requestId = id
             when (method) {
                 "initialize" -> initialize(id)
                 "tools/list" -> toolsList(id)
@@ -110,7 +114,7 @@ internal class ToolDispatcher(private val service: GoodHubPluginService) {
             }
         } catch (e: Exception) {
             // 解析层异常同样兜成 -32603，不向外抛。
-            errorFrame(null, McpErrors.INTERNAL_ERROR, e.message ?: "parse error")
+            errorFrame(requestId, McpErrors.INTERNAL_ERROR, e.message ?: "parse error")
         }
     }
 

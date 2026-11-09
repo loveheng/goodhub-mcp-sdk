@@ -22,13 +22,22 @@ import org.junit.Test
 
 /**
  * 反向请求帧路由核心验收钉（ai-capability-export M-C）：
- * 帧形状 / _async 多帧关联 / phase 翻译 / 取消映射 / 宿主死亡确定性失败。
+ * 帧形状 / _async 多帧关联 / phase 翻译 / 取消映射 / 宿主死亡确定性失败 /
+ * 宿主离线与发射失败的 HOST_OFFLINE 收口。
  */
 class AiRuntimeCoreTest {
 
-    private class Harness {
+    private class Harness(connected: Boolean = true) {
         val frames = mutableListOf<String>()
-        val core = AiRuntimeCore { frames.add(it) }
+        var failPush = false
+        val core = AiRuntimeCore(
+            pushFrame = { frame ->
+                if (failPush) throw IllegalStateException("binder dead")
+                frames.add(frame)
+                Unit
+            },
+            isHostConnected = { connected },
+        )
 
         fun request(
             asyncCapable: Boolean = true,
@@ -165,7 +174,7 @@ class AiRuntimeCoreTest {
         // client 的 GoodHubAiProvider.get() 经 Class.forName 触达本 object 静态
         // 初始化——本测试在 runtime 模块内直接验证注册语义。
         val impl = com.zzh.goodhub.ai.GoodHubAiProvider.get()
-        assertTrue(impl is GoodHubAi)
+        assertTrue("自注册应返回 runtime 实现", impl is GoodHubAiImpl)
     }
 
     @Test
@@ -184,6 +193,52 @@ class AiRuntimeCoreTest {
         kotlinx.coroutines.delay(100)
         val cancelFrames = h.frames.filter { JSONObject(it).optString("method") == McpContract.METHOD_AI_CANCEL }
         assertEquals("协程取消 → ai/cancel 帧自动发射", 1, cancelFrames.size)
+    }
+
+    @Test
+    fun `宿主未连接 → HOST_OFFLINE 结构化失败且 pending 回滚（禁裸异常与泄漏）`() {
+        val h = Harness(connected = false)
+        val failures = mutableListOf<AiFailure>()
+        val id = h.core.submitRequest(
+            request = AiRequest("i", "x"),
+            asyncCapable = true,
+            onPhase = null,
+            onResult = { _, _ -> },
+            onFailure = { failures.add(it) },
+        )
+        assertTrue(id.isNotEmpty()) // 禁抛裸异常穿透门面
+        assertEquals("未连接不应发射请求帧", 0, h.frames.size)
+        assertEquals(0, h.core.pendingCount)
+        assertEquals(1, failures.size)
+        assertEquals(AiFailure.Codes.HOST_OFFLINE, failures[0].code)
+    }
+
+    @Test
+    fun `发射帧抛异常 → 同等收敛 HOST_OFFLINE（Binder 断连等价）`() {
+        val h = Harness()
+        h.failPush = true
+        val failures = mutableListOf<AiFailure>()
+        h.core.submitRequest(
+            request = AiRequest("i", "x"),
+            asyncCapable = false,
+            onPhase = null,
+            onResult = { _, _ -> },
+            onFailure = { failures.add(it) },
+        )
+        assertEquals(0, h.core.pendingCount)
+        assertEquals(AiFailure.Codes.HOST_OFFLINE, failures.single().code)
+    }
+
+    @Test
+    fun `cancel 帧发射失败仍本地收口（禁调用方永久悬挂）`() {
+        val h = Harness()
+        val failures = mutableListOf<AiFailure>()
+        val id = core_submit(h, onFailure = { failures.add(it) })
+        h.failPush = true
+        h.core.cancel(id)
+        assertEquals(1, failures.size)
+        assertEquals(AiFailure.Codes.USER_REJECTED, failures[0].code)
+        assertEquals(0, h.core.pendingCount)
     }
 
     // ---- helpers ----

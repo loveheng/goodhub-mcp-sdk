@@ -9,8 +9,9 @@ import org.junit.Test
 
 /**
  * 声明式 Prompt 分派器验收钉（0.6.0 prompts 能力）：
- * capabilities 按有无声明 / prompts/list 契约 / prompts/get 字面替换 /
- * 未知 prompt -32602 / 缺参数 -32602 / 无声明回落 -32601。
+ * capabilities 按有无声明及线级形状 / prompts/list 契约 / prompts/get 字面替换 /
+ * 未知 prompt -32602 / 缺参数 -32602 / 无声明回落 -32601 /
+ * 上下文非首位注入 / 模板单次扫描不递归 / 异常帧回显 id。
  */
 class PromptDispatcherTest {
 
@@ -35,6 +36,27 @@ class PromptDispatcherTest {
         fun echo(text: String): String = text
     }
 
+    /** 进阶靶子：集中覆盖 ctx 非首位 / 双参数模板 / 运行期异常。 */
+    private class ServiceWithAdvancedPrompts : GoodHubPluginService(
+        serverId = "p4",
+        serverTitle = "进阶 prompt 插件",
+    ) {
+        @McpPrompt(name = "two-args")
+        @Suppress("UNUSED_PARAMETER")
+        fun two(
+            @PromptArg("a") a: String,
+            @PromptArg("b") b: String,
+        ): String = "{{a}}|{{b}}"
+
+        @McpPrompt(name = "ctx-second")
+        @Suppress("UNUSED_PARAMETER")
+        fun ctxSecond(@PromptArg("scope") scope: String, ctx: McpToolContext): String =
+            "ctx=${ctx.javaClass.simpleName}|{{scope}}"
+
+        @McpPrompt(name = "boom")
+        fun boom(): String = throw IllegalStateException("模板渲染炸了")
+    }
+
     private val withSvc = ServiceWithPrompts()
     private val withoutSvc = ServiceWithoutPrompts()
 
@@ -50,6 +72,15 @@ class PromptDispatcherTest {
             "无 @McpPrompt → 不声明（宿主 hasPrompts=false 自动降级）",
             without.getJSONObject("result").getJSONObject("capabilities").has("prompts"),
         )
+    }
+
+    @Test
+    fun `capabilities-prompts 为单层内容对象（禁双层嵌套）`() {
+        val caps = JSONObject(ToolDispatcher(withSvc).handle(rpc("initialize")))
+            .getJSONObject("result").getJSONObject("capabilities")
+        val prompts = caps.getJSONObject("prompts")
+        assertFalse("禁止 capabilities.prompts.prompts 双层嵌套", prompts.has("prompts"))
+        assertEquals("prompts 应为 capability 内容对象", 0, prompts.length())
     }
 
     @Test
@@ -111,6 +142,42 @@ class PromptDispatcherTest {
             // 两条路径其一命中即过
         }
     }
+
+    @Test
+    fun `McpToolContext 可声明在非首位（按真实形参位置注入）`() {
+        val d = ToolDispatcher(ServiceWithAdvancedPrompts())
+        val out = JSONObject(
+            d.handle(rpc("prompts/get", """{"name":"ctx-second","arguments":{"scope":"S"}}""")),
+        )
+        assertFalse("ctx 非首位不得回落为内部错误：${out.optJSONObject("error")}", out.has("error"))
+        val text = textOf(out)
+        assertTrue("应注入 McpToolContext: $text", text.contains("McpToolContext"))
+        assertTrue("占位符应替换: $text", text.endsWith("|S"))
+    }
+
+    @Test
+    fun `模板单次扫描：参数值里的占位符不被二次展开（防模板注入）`() {
+        val d = ToolDispatcher(ServiceWithAdvancedPrompts())
+        val out = JSONObject(
+            d.handle(rpc("prompts/get", """{"name":"two-args","arguments":{"a":"{{b}}","b":"X"}}""")),
+        )
+        // 旧逐参数 replace 会得到 "X|X"；单次扫描应保留参数值中的 {{b}} 字面量。
+        assertEquals("{{b}}|X", textOf(out))
+    }
+
+    @Test
+    fun `模板方法抛异常 → -32603 且回显原请求 id（宿主不悬挂）`() {
+        val out = JSONObject(
+            ToolDispatcher(ServiceWithAdvancedPrompts())
+                .handle(rpc("prompts/get", """{"name":"boom"}""")),
+        )
+        assertEquals(-32603, out.getJSONObject("error").getInt("code"))
+        assertEquals("error.id 须与 request.id 一致", 1, out.getInt("id"))
+    }
+
+    private fun textOf(out: JSONObject): String =
+        out.getJSONObject("result").getJSONArray("messages")
+            .getJSONObject(0).getJSONObject("content").getString("text")
 
     private fun rpc(method: String, params: String? = null): String =
         buildString {

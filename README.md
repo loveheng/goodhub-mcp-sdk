@@ -43,8 +43,10 @@ class FlashlightMcpPlugin : GoodHubPluginService(
 | `:contract` | `goodhub-mcp-contract.aar` | **契约唯一物理副本**：AIDL（`IMcpChannel` / `IMcpCallback`）+ 发现约定常量。宿主与插件侧共用，杜绝跨仓手抄副本漂移。 |
 | `:plugin-core` | `goodhub-mcp-plugin-core.aar` | **插件侧运行时 SDK**：`GoodHubPluginService` 基类、`@McpTool` / `@Param` 注解、反射派发器、异步上下文。零第三方依赖、零 Flutter 依赖。 |
 | `:sample-dummy-plugin` | `sample-dummy-plugin-*.apk` | 可安装的靶子 / 示例 App，同时是宿主真机联调的 e2e 靶子（`serverId=dummy`）。 |
+| `:goodhub-ai-client` | `goodhub-ai-client.aar` | **AI 消费方门面**（业务层唯一 API 面）：`GoodHubAi` 四入口 + 自有类型 + 静态探测；公开 API 零 contract / transport 类型。 |
+| `:goodhub-ai-runtime` | `goodhub-ai-runtime.aar` | **AI 消费方实现件**：连接生命周期 / `_async` 多帧关联 / phase 翻译 / 取消与死亡收敛；library Manifest 随包声明传输服务，业务层零 Manifest。 |
 
-> `:contract` 与 `:plugin-core` 是**两个** AAR。手工引 AAR 时需两个都引；用 Maven 引 `:plugin-core` 时 `:contract` 会作为传递依赖自动带入。
+> 共 **四个** AAR，按角色分两条路径：供工具插件引 `:plugin-core`（`:contract` 经 `api` 依赖自动带入）；消费宿主 AI 算力引 `:goodhub-ai-client` + `runtimeOnly(":goodhub-ai-runtime")`。手工引 AAR 时需把该路径涉及的两件都引齐。
 
 ---
 
@@ -52,7 +54,7 @@ class FlashlightMcpPlugin : GoodHubPluginService(
 
 > **AI 算力消费方（想借 GoodHub 的 AI 算力）** → 从 [`AI_ONBOARDING.md`](./AI_ONBOARDING.md) 开始（端到端步骤 + 机械验收 + 常见坑）。本节以下内容面向**供工具的插件接入**。
 
-### 2.1 Maven 坐标（已发布）
+### 2.1 Maven 坐标（当前版本）
 
 ```kotlin
 dependencies {
@@ -62,7 +64,7 @@ dependencies {
 
 `:contract` 随 `api` 依赖传递引入，无需单独声明。
 
-仓库地址：`https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk`（GitHub Packages，由 `v0.6.0` tag 触发 CI 发布）。
+仓库地址：`https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk`（GitHub Packages，由 `v0.6.0` tag 触发 CI 发布）。**版本号可用 ≠ 已发布**：CI 仅在 `refs/tags/v*` 上执行 publish 且校验 tag 与 `VERSION` 一致；未打对应 tag 的版本不会出现在远端仓，请改用 §2.2 的离线分发件或本地 Maven 仓。
 
 包本身**已是公开**（从公开仓发布，继承仓可见性；匿名可打开包详情页）。但 GitHub Packages 的 Maven 端点**对公开包同样强制要求认证**（官方原文：public 包也需要 access token 才能 install），匿名拉取返回 401 —— 所以消费方仍需带凭证：
 
@@ -133,7 +135,7 @@ plugin-core/build/outputs/aar/goodhub-mcp-plugin-core-release.aar
 contract/build/outputs/aar/goodhub-mcp-contract-release.aar
 ```
 
-### 2.3 接入清单（对照检查）
+### 2.5 接入清单（对照检查）
 
 - [ ] `minSdk >= 34`
 - [ ] Service 声明 `android:exported="true"` + `action="com.zzh.goodhub.action.MCP_SERVER"`
@@ -199,6 +201,8 @@ class MyPlugin : GoodHubPluginService(
 | 反向请求 | `McpToolContext.reverseRequest()` 发 server→client 请求（如 `sampling/createMessage`），经 `answerReverse` 回程闭环 |
 | 命名不上仲裁 | SDK 只上报构造入参的 `serverId`，不做包名拼接、不做命名主权仲裁（属宿主职责） |
 | 可见性标记 | `@McpTool(visibility = ToolVisibility.SHARED)` 声明工具可见性范围，下发到每个工具对象的 `_meta.goodhub.visibility`（默认 `PRIVATE` / default-deny）。**纯标记**：SDK 不据此剔除 `tools/list` 条目、不拦截任何 `tools/call`，如何聚合/分桶属宿主解析职责 |
+| 声明式 Prompt | `@McpPrompt` / `@PromptArg` 自动生成 `prompts/list` 契约，`prompts/get` 做 `{{arg}}` 单次字面替换；有声明才在 `initialize.capabilities` 声明 `prompts`；装配期急扫描 fail-fast |
+| AI 算力消费面 | `:goodhub-ai-client` + `:goodhub-ai-runtime` 双件：`ai/complete` / `ai/cancel` 原语、四值阶段帧、十二码结构化失败、协程取消自动映射、宿主死亡确定性收敛；业务层零 IPC / 零 Manifest |
 
 ### 已知缺口
 
@@ -327,10 +331,12 @@ class MyDartBridgePlugin : GoodHubPluginService("myapp", "My App") {
 ```bash
 export ANDROID_HOME="$HOME/android-sdk"
 
-# 三模块构建
-./gradlew :contract:assembleRelease :plugin-core:assembleRelease :sample-dummy-plugin:assembleDebug
+# 五模块构建
+./gradlew :contract:assembleRelease :plugin-core:assembleRelease \
+          :goodhub-ai-client:assembleRelease :goodhub-ai-runtime:assembleRelease \
+          :sample-dummy-plugin:assembleDebug
 
-# 单元测试（契约冻结自检）
+# 单元测试（契约冻结自检 + 派发器 / AI 帧路由）
 ./gradlew test
 
 # 发布到本地 Maven 仓库

@@ -1,5 +1,6 @@
 package com.zzh.goodhub.mcp.plugin
 
+import com.zzh.goodhub.mcp.McpContract
 import org.json.JSONObject
 
 /**
@@ -54,10 +55,11 @@ sealed class OnDeviceOutcome {
             } catch (_: Throwable) {
                 return Immediate(text)
             }
-            if (json.optString("execution_mode") != "deferred") {
+            // 键名一律取契约单源（McpContract.AI_KEY_*），禁在解析面重抄字面量。
+            if (json.optString(McpContract.AI_KEY_EXECUTION_MODE) != "deferred") {
                 return Immediate(text)
             }
-            val taskId = json.optString("task_id")
+            val taskId = json.optString(McpContract.AI_KEY_TASK_ID)
             if (taskId.isEmpty()) {
                 throw IllegalArgumentException(
                     "on_device_complete deferred 回执缺 task_id（宿主契约违约）：$text")
@@ -65,7 +67,7 @@ sealed class OnDeviceOutcome {
             return Deferred(
                 taskId = taskId,
                 status = json.optString("status", "queued"),
-                expiryMs = json.optLong("expiry_ms", -1L)
+                expiryMs = json.optLong(McpContract.AI_KEY_EXPIRY_MS, -1L)
             )
         }
     }

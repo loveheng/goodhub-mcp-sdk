@@ -3,10 +3,10 @@ package com.zzh.goodhub.ai.runtime
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
-import android.util.Log
 import com.zzh.goodhub.mcp.IMcpCallback
 import com.zzh.goodhub.mcp.IMcpChannel
 import com.zzh.goodhub.mcp.McpContract
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -18,13 +18,23 @@ import org.json.JSONObject
  */
 class AiTransportService : Service() {
 
+    // 死亡代理生命周期：每次注册先解绑旧的，避免重复 registerCallback 累积。
+    private var linkedBinder: IBinder? = null
+    private var deathRecipient: IBinder.DeathRecipient? = null
+
+    private fun unlinkDeath() {
+        val b = linkedBinder
+        val r = deathRecipient
+        if (b != null && r != null) runCatching { b.unlinkToDeath(r, 0) }
+        linkedBinder = null
+        deathRecipient = null
+    }
+
     private val binder = object : IMcpChannel.Stub() {
-        override fun call(jsonRpcRequest: String): String {
-            // 宿主侧保证离主线程（thirdconnect §1.2.3）；此处同步应答。
-            return route(jsonRpcRequest)
-        }
+        override fun call(jsonRpcRequest: String): String = route(jsonRpcRequest)
 
         override fun registerCallback(cb: IMcpCallback?) {
+            unlinkDeath()
             val push: ((String) -> Unit)? = cb?.let { callback ->
                 { frame: String ->
                     runCatching { callback.onEvent(frame) } // oneway；断连由死亡代理收敛
@@ -33,8 +43,10 @@ class AiTransportService : Service() {
             GoodHubAiRuntime.onHostCallback(push)
             if (cb != null) {
                 // §3.7 吸水机制 2：宿主在途死亡 → 确定性失败 HOST_TERMINATED。
-                runCatching {
-                    cb.asBinder().linkToDeath({ GoodHubAiRuntime.core.onHostDied() }, 0)
+                val recipient = IBinder.DeathRecipient { GoodHubAiRuntime.core.onHostDied() }
+                if (runCatching { cb.asBinder().linkToDeath(recipient, 0) }.isSuccess) {
+                    linkedBinder = cb.asBinder()
+                    deathRecipient = recipient
                 }
             }
         }
@@ -48,8 +60,9 @@ class AiTransportService : Service() {
 
     /** 面向宿主的最小 JSON-RPC 面：initialize / tools/list（空工具集）；其余 -32601。 */
     private fun route(request: String): String {
-        val req = runCatching { JSONObject(request) }.getOrNull() ?: return errorFrame("null", -32600, "请求非合法 JSON")
-        val id = req.opt("id") ?: "null"
+        val req = runCatching { JSONObject(request) }.getOrNull()
+            ?: return errorFrame(JSONObject.NULL, -32600, "请求非合法 JSON")
+        val id = req.opt("id") ?: JSONObject.NULL
         val method = req.optString("method", "")
         return when (method) {
             "initialize" -> JSONObject()
@@ -71,13 +84,14 @@ class AiTransportService : Service() {
             "tools/list" -> JSONObject()
                 .put("jsonrpc", "2.0")
                 .put("id", id)
-                .put("result", JSONObject().put("tools", org.json.JSONArray()))
+                .put("result", JSONObject().put("tools", JSONArray()))
                 .toString()
-            else -> errorFrame(id.toString(), -32601, "AI 消费端不提供工具面: $method")
+            else -> errorFrame(id, -32601, "AI 消费端不提供工具面: $method")
         }
     }
 
-    private fun errorFrame(id: String, code: Int, message: String): String =
+    /** id 原样回显（禁强转 String——数字 id 会变成字符串，违反 JSON-RPC）。 */
+    private fun errorFrame(id: Any, code: Int, message: String): String =
         JSONObject()
             .put("jsonrpc", "2.0")
             .put("id", id)
@@ -91,12 +105,9 @@ class AiTransportService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
+        unlinkDeath()
         GoodHubAiRuntime.onHostCallback(null)
         GoodHubAiRuntime.core.onHostDied() // 服务解绑 = 在途全收敛（宿主重 bind 后重发）
         super.onDestroy()
-    }
-
-    companion object {
-        private const val TAG = "GoodHubAiRuntime"
     }
 }

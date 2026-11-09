@@ -1,5 +1,6 @@
 package com.zzh.goodhub.mcp.plugin
 
+import com.zzh.goodhub.mcp.McpContract
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CompletableFuture
@@ -13,6 +14,8 @@ import java.util.concurrent.CompletableFuture
  *    供宿主 BinderTransport 按 token 归属到在途 callWithProgress）；
  *  - [complete] / [completeRaw] / [fail]：推送同 `id` 异步终帧（success / error），
  *    唤醒宿主 `_async` completer（宿主对 `_async` 应答保持 completer 开启直到同 id 终帧）；
+ *  - [tryComplete] / [tryCompleteRaw] / [tryFail]：同上但回报投递成败，供
+ *    注解式异步工具保住「终帧推不出去」这一必须可观测的降级信号；
  *  - [reverseRequest]：向宿主发 server→client 反向请求（如 `sampling/createMessage`），
  *    经 `answerReverse` 回程（§5 闭环）。
  *
@@ -42,42 +45,64 @@ class McpToolContext internal constructor(
 
     /** 异步终帧（success）：文本结果包成标准 `content` 块。 */
     fun complete(text: String) {
-        completeRaw(
-            JSONObject().apply {
-                put(
-                    "content",
-                    JSONArray().apply {
-                        put(JSONObject().apply { put("type", "text"); put("text", text) })
-                    }
-                )
-            }
-        )
+        service.pushEvent(textResultFrame(text).toString())
     }
 
     /** 异步终帧（success）：任意结构化 `result` 对象。 */
     fun completeRaw(result: JSONObject) {
-        service.pushEvent(
-            JSONObject().apply {
-                put("jsonrpc", "2.0")
-                put("id", id ?: JSONObject.NULL)
-                put("result", result)
-            }.toString()
-        )
+        service.pushEvent(successFrame(result).toString())
     }
+
+    /**
+     * 与 [complete] 同形，但回报终帧投递成败。
+     *
+     * @return true = 已投递；false = 宿主回调未注册或投递抛异常。
+     *
+     * **终帧推不出去 = 宿主侧悬挂**（只能靠宿主 idle 超时兜底）。需要保住这个
+     * 降级信号（打 `DEGRADE` 日志 / 落本地待补拉 / 自行重试）时用本方法，
+     * 不要静默丢结果。`GoodHubPluginService.tryEmitEvent` 只服务子类接管路径，
+     * 本组方法补齐注解式 `@McpTool(async = true)` 路径。
+     */
+    fun tryComplete(text: String): Boolean =
+        service.tryPushEvent(textResultFrame(text).toString())
+
+    /** [completeRaw] 的可观测版本，语义同 [tryComplete]。 */
+    fun tryCompleteRaw(result: JSONObject): Boolean =
+        service.tryPushEvent(successFrame(result).toString())
 
     /** 异步终帧（error）。 */
     fun fail(code: Int, message: String) {
-        service.pushEvent(
-            JSONObject().apply {
-                put("jsonrpc", "2.0")
-                put("id", id ?: JSONObject.NULL)
-                put(
-                    "error",
-                    JSONObject().apply { put("code", code); put("message", message) }
-                )
-            }.toString()
-        )
+        service.pushEvent(errorFrame(code, message).toString())
     }
+
+    /** [fail] 的可观测版本，语义同 [tryComplete]。 */
+    fun tryFail(code: Int, message: String): Boolean =
+        service.tryPushEvent(errorFrame(code, message).toString())
+
+    private fun textResultFrame(text: String): JSONObject = successFrame(
+        JSONObject().apply {
+            put(
+                "content",
+                JSONArray().apply {
+                    put(JSONObject().apply { put("type", "text"); put("text", text) })
+                }
+            )
+        }
+    )
+
+    private fun successFrame(result: JSONObject): JSONObject =
+        JSONObject().apply {
+            put("jsonrpc", "2.0")
+            put("id", id ?: JSONObject.NULL)
+            put("result", result)
+        }
+
+    private fun errorFrame(code: Int, message: String): JSONObject =
+        JSONObject().apply {
+            put("jsonrpc", "2.0")
+            put("id", id ?: JSONObject.NULL)
+            put("error", JSONObject().apply { put("code", code); put("message", message) })
+        }
 
     /**
      * 反向请求（server→client，§5）：向宿主发 request 帧，返回 [CompletableFuture]
@@ -110,8 +135,8 @@ class McpToolContext internal constructor(
         val params = JSONObject().apply {
             put("instruction", instruction)
             put("input", input)
-            put("allow_deferred", allowDeferred)
-            if (expiryMs != null) put("expiry_ms", expiryMs)
+            put(McpContract.AI_KEY_ALLOW_DEFERRED, allowDeferred)
+            if (expiryMs != null) put(McpContract.AI_KEY_EXPIRY_MS, expiryMs)
         }
         return service.reverseRequest(OnDeviceOutcome.REVERSE_METHOD, params)
             .thenApply { result ->
@@ -132,7 +157,7 @@ class McpToolContext internal constructor(
      * [OnDeviceOutcome.STATUS_REVERSE_METHOD] 注。
      */
     fun onDeviceTaskStatus(taskId: String): CompletableFuture<JSONObject> {
-        val params = JSONObject().apply { put("task_id", taskId) }
+        val params = JSONObject().apply { put(McpContract.AI_KEY_TASK_ID, taskId) }
         return service.reverseRequest(OnDeviceOutcome.STATUS_REVERSE_METHOD, params)
             .thenApply { result ->
                 result.optJSONObject("content")?.optString("text")?.let { JSONObject(it) }

@@ -4,9 +4,11 @@ import com.zzh.goodhub.ai.AiRequest
 import com.zzh.goodhub.ai.AiSyncResult
 import com.zzh.goodhub.ai.GoodHubAi
 import com.zzh.goodhub.mcp.plugin.GoodHubPluginService
+import com.zzh.goodhub.mcp.plugin.McpPrompt
 import com.zzh.goodhub.mcp.plugin.McpTool
 import com.zzh.goodhub.mcp.plugin.McpToolContext
 import com.zzh.goodhub.mcp.plugin.Param
+import com.zzh.goodhub.mcp.plugin.PromptArg
 import com.zzh.goodhub.mcp.plugin.ToolVisibility
 import org.json.JSONArray
 import org.json.JSONObject
@@ -115,4 +117,13 @@ class DummyPluginService : GoodHubPluginService(
             }
         }
     }
+
+    /**
+     * 声明式 Prompt 靶子（0.6.0）：宿主 CoW 拉取后注册为 appScoped skill。
+     * `{{scope}}` 由 SDK 单次字面替换；同时验证 `prompts/list` 契约下发与
+     * `initialize.capabilities.prompts` 的单层形状。
+     */
+    @McpPrompt(name = "dummy-guide", description = "Dummy 靶子工具面口径")
+    fun dummyGuide(@PromptArg("scope", description = "适用范围") scope: String): String =
+        "Dummy 工具面口径（{{scope}}）：echo 回显、add 求和、slowEcho 异步进度、reverseDemo 反向请求"
 }

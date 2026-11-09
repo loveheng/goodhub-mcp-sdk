@@ -14,6 +14,28 @@
 - `initialize` capabilities 有 @McpPrompt 才声明 `prompts`（宿主 hasPrompts=false 自动降级）。
 - 文档网补齐：`api.md` §2.4（@McpPrompt 字典）+ README §2.2.1 与接入清单项 + [AI_ONBOARDING.md](./AI_ONBOARDING.md) / AI_INTEGRATION_GUIDE 文档地图指针。
 
+### 修复（0.6.0 发布前自检——尚未发版，故并入本版，不另升版本号）
+
+- **发布链补齐**：CI 的构建 / 归档 / 发布与 `scripts/dist.sh` 由「两模块」补到「四工件」——
+  `:goodhub-ai-client` / `:goodhub-ai-runtime` 此前代码已落地但从未被发布，文档里的坐标实际不可用；
+  dist 脚本逐一校验四个 AAR 存在；文档坐标 / 模块清单 / 能力清单 / 章节编号统一到 0.6.0，
+  README §2.1 明确「版本号可用 ≠ 已发布，publish 仅由 `v*` tag 触发」。
+- **AI 消费面 `HOST_OFFLINE` 真正落地**：宿主未连接或帧发射抛异常时，`AiRuntimeCore` 回滚
+  在途表并以 `HOST_OFFLINE` 结构化失败收口（此前抛裸 `IllegalStateException`：Flow 抛异常、
+  回调档 `runCatching` 静默吞掉 → 永久悬挂）；回调档任何异常一律转 `AiEvent.Failure`；
+  `ai/cancel` 发射失败仍本地收口。
+- **prompts 线级与调用修正**：`capabilities.prompts` 由双层嵌套改回单层内容对象；
+  `McpToolContext` 按真实形参位置注入（可非首位）；模板渲染改单次扫描替换，参数值
+  不参与后续匹配（防参数值里的 `{{b}}` 被二次展开）；派发层异常兜底帧回显原请求 `id`。
+- **终帧可观测性补齐**：`McpToolContext` 新增 `tryComplete` / `tryCompleteRaw` / `tryFail`
+  （回报终帧投递成败），补齐注解式 `@McpTool(async = true)` 路径——此前 `tryEmitEvent`
+  只服务子类接管路径，注解路径的终帧推不出去仍不可观测。
+- **清账**：`McpContract.AI_KEY_*` / `AI_PHASE_*` 在联合态解析面与帧路由面改为单源引用；
+  `AiTransportService` 每次注册先 `unlinkToDeath`、`errorFrame` 原样回显 id；dummy 靶子补
+  `@McpPrompt` 样例。
+- **回归**：单测 45 → 52 例（capabilities 形状 / ctx 非首位 / 模板不递归 / 错误帧 id /
+  HOST_OFFLINE / 发射失败 / cancel 收口），五模块 `assembleRelease` + `dist.sh` 全通。
+
 ## 0.5.1（2026-11-09）
 
 ### 变更（退役清账）

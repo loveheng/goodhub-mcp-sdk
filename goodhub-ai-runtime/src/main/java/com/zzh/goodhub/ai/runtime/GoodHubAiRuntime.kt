@@ -42,11 +42,15 @@ object GoodHubAiRuntime {
     @Volatile
     var pushToHost: ((String) -> Unit)? = null
 
-    val core: AiRuntimeCore = AiRuntimeCore { frame ->
-        val push = pushToHost
-            ?: throw HostNotConnectedException()
-        push(frame)
-    }
+    val core: AiRuntimeCore = AiRuntimeCore(
+        pushFrame = { frame ->
+            val push = pushToHost ?: throw HostNotConnectedException()
+            push(frame)
+        },
+        // 未连接判定上移到核心：HOST_OFFLINE 在核心内以结构化失败收口，
+        // 禁裸异常穿透门面（Flow 抛异常 / 回调档静默悬挂）。
+        isHostConnected = { pushToHost != null },
+    )
 
     init {
         GoodHubAiProvider.register { GoodHubAiImpl(core, callbackScope) }
@@ -102,7 +106,10 @@ internal class GoodHubAiImpl(
             runCatching {
                 completeStream(request).collect { listener.onEvent(it) }
             }.onFailure { e ->
-                if (e is AiFailureException) listener.onEvent(AiEvent.Failure(e.failure))
+                // 任何异常都必须转成终态事件：吞异常 = 回调档永久悬挂。
+                val failure = if (e is AiFailureException) e.failure
+                else AiFailure(AiFailure.Codes.ENGINE_FAILED, e.message)
+                listener.onEvent(AiEvent.Failure(failure))
             }
         }
         return object : AiCall {

@@ -78,7 +78,8 @@ fun dataGuide(@PromptArg("scope", description = "适用范围") scope: String): 
 ```
 
 - `{{arg}}` 占位符 **SDK 字面替换**（单次遍历不递归）；返回 `String` = 单条 user 消息模板。
-- capabilities 有 @McpPrompt 才声明 `prompts`（无 → 宿主 hasPrompts=false 自动降级，Tier 2 零破坏）。
+- capabilities 有 @McpPrompt 才声明 `prompts`（无 → 宿主 hasPrompts=false 自动降级，Tier 2 零破坏）；
+  **`initialize.capabilities.prompts` 是单层内容对象**（有声明时 `{}`），不得再内嵌一层 `prompts`。
 - **装配期急扫描 fail-fast**：PromptArg 非 String / 返回非 String = 插件启动即崩（禁静默）。
 - 与 @McpTool 分工：工具 = 副作用动词；prompt = 模板文本。
 
@@ -117,6 +118,7 @@ fun dataGuide(@PromptArg("scope", description = "适用范围") scope: String): 
 - **异步长任务**：`@McpTool(async = true)` 立即回 `_async` 占位，结果经 `McpToolContext.complete/fail` 异步投递（宿主必被唤醒，不悬挂）；首参注入 `McpToolContext`。
 - **进度推送**：`McpToolContext.progress(progress, message)` 推 `notifications/progress`（带 `progressToken`）。
 - **反向请求**：`McpToolContext.reverseRequest(method, params)` 发 server→client 请求（如 `sampling/createMessage`），经 `answerReverse` 回程闭环。
+- **终帧可观测**：异步工具除 `ctx.complete/fail` 外，可用 `ctx.tryComplete(text)` / `ctx.tryCompleteRaw(result)` / `ctx.tryFail(code, message)` 取投递成败；返回 `false` = 宿主回调未注册或投递抛异常（终帧推不出 = 宿主悬挂），须自行记降级日志 / 落待补拉，禁静默丢结果。
 - **API 结构红线**：派发器 `ToolDispatcher` 为 `internal`、上下文构造器 `internal`、`pushEvent`/`reverseRequest` 为 `internal`；子类扩展点仅 `protected open` 的 `handleJsonRpc` / `onHostCallback` / `onHostAnswerReverse` / `emitEvent`。
 
 ---
@@ -347,8 +349,8 @@ fun dataGuide(@PromptArg("scope", description = "适用范围") scope: String): 
 
 ```kotlin
 dependencies {
-    implementation("com.zzh.goodhub.mcp:goodhub-ai-client:0.4.0")   // API 面
-    runtimeOnly("com.zzh.goodhub.mcp:goodhub-ai-runtime:0.4.0")     // 实现件
+    implementation("com.zzh.goodhub.mcp:goodhub-ai-client:0.6.0")   // API 面
+    runtimeOnly("com.zzh.goodhub.mcp:goodhub-ai-runtime:0.6.0")     // 实现件
 }
 ```
 
@@ -409,5 +411,5 @@ dependencies {
 ## 12. 版本与消费
 
 - 版本事实源：[`VERSION`](./VERSION)（`version` / `mcp_protocol_version` / `contract_version`）。
-- 发布：GitHub Packages（`com.zzh.goodhub.mcp:goodhub-mcp-contract:0.6.0` / `:goodhub-mcp-plugin-core:0.6.0` / `:goodhub-ai-client:0.6.0` / `:goodhub-ai-runtime:0.6.0`）；或 `./scripts/dist.sh` 产免认证离线分发件。
+- 发布：GitHub Packages（`:goodhub-mcp-contract` / `:goodhub-mcp-plugin-core` / `:goodhub-ai-client` / `:goodhub-ai-runtime`，均 `0.6.0`）——由 `vX.Y.Z` tag 触发 CI，四个工件一次性发布，CI 校验 tag 与 `VERSION` 一致；或 `./scripts/dist.sh` 产免认证离线分发件（同样四件齐全并逐一校验 AAR 存在）。
 - 契约未变：`CONTRACT_VERSION` 仍为 `v1`，AIDL 包名与方法集不变，向后兼容 `0.1.1`；0.4.0 增量为 JSON-RPC method 层（`ai/complete` / `ai/cancel` 常量与失败码表）+ AI 消费方工件（§9），存量插件零影响。
