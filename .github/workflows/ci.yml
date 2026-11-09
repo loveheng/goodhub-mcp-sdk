@@ -22,6 +22,22 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # wrapper 首次下载走 services.gradle.org → GitHub Releases，偶发 504（publish job
+      # 曾因此在 Gradle 启动前失败）。build/publish 是独立 runner，缓存未必命中，
+      # 故显式预热并重试；成功后 distribution 已入 wrapper 缓存，后续命令不再下载。
+      - name: 预热 Gradle distribution（瞬时 504 重试）
+        run: |
+          for i in 1 2 3 4; do
+            if ./gradlew --version >/dev/null 2>&1; then
+              echo "Gradle 就绪"
+              exit 0
+            fi
+            echo "::warning::Gradle distribution 下载失败，第 $i 次重试"
+            sleep 15
+          done
+          echo "::error::Gradle distribution 连续 4 次下载失败"
+          exit 1
+
       # runner 自带 Android SDK（ubuntu-latest 预装 platforms/build-tools），不引入
       # setup-android 动作：它每次要重下 cmdline-tools，失败面大且非必需。
       # 这里只补齐缺失组件，缺了就在下面 ls 校验处硬失败（错误信息直指缺哪个）。
@@ -79,6 +95,22 @@ jobs:
           java-version: '21'
 
       - uses: gradle/actions/setup-gradle@v4
+
+      # wrapper 首次下载走 services.gradle.org → GitHub Releases，偶发 504（publish job
+      # 曾因此在 Gradle 启动前失败）。build/publish 是独立 runner，缓存未必命中，
+      # 故显式预热并重试；成功后 distribution 已入 wrapper 缓存，后续命令不再下载。
+      - name: 预热 Gradle distribution（瞬时 504 重试）
+        run: |
+          for i in 1 2 3 4; do
+            if ./gradlew --version >/dev/null 2>&1; then
+              echo "Gradle 就绪"
+              exit 0
+            fi
+            echo "::warning::Gradle distribution 下载失败，第 $i 次重试"
+            sleep 15
+          done
+          echo "::error::Gradle distribution 连续 4 次下载失败"
+          exit 1
 
       # runner 自带 Android SDK（ubuntu-latest 预装 platforms/build-tools），不引入
       # setup-android 动作：它每次要重下 cmdline-tools，失败面大且非必需。
