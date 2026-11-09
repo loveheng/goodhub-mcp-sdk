@@ -50,17 +50,19 @@ class FlashlightMcpPlugin : GoodHubPluginService(
 
 ## 2. 接入方式
 
+> **AI 算力消费方（想借 GoodHub 的 AI 算力）** → 从 [`AI_ONBOARDING.md`](./AI_ONBOARDING.md) 开始（端到端步骤 + 机械验收 + 常见坑）。本节以下内容面向**供工具的插件接入**。
+
 ### 2.1 Maven 坐标（已发布）
 
 ```kotlin
 dependencies {
-    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.3.0")
+    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.6.0")
 }
 ```
 
 `:contract` 随 `api` 依赖传递引入，无需单独声明。
 
-仓库地址：`https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk`（GitHub Packages，由 `v0.3.0` tag 触发 CI 发布）。
+仓库地址：`https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk`（GitHub Packages，由 `v0.6.0` tag 触发 CI 发布）。
 
 包本身**已是公开**（从公开仓发布，继承仓可见性；匿名可打开包详情页）。但 GitHub Packages 的 Maven 端点**对公开包同样强制要求认证**（官方原文：public 包也需要 access token 才能 install），匿名拉取返回 401 —— 所以消费方仍需带凭证：
 
@@ -82,7 +84,7 @@ repositories {
 
 ```
 dist/maven-repo/                    ← 直接当 file 仓消费
-dist/goodhub-mcp-sdk-0.3.0.zip      ← 同一份内容的压缩包
+dist/goodhub-mcp-sdk-0.6.0.zip      ← 同一份内容的压缩包
 ```
 
 ```kotlin
@@ -92,6 +94,18 @@ repositories {
 ```
 
 或把整个 `maven-repo` 目录拷进 `~/.m2/repository`（标准路径布局，Gradle 自动识别）。
+
+### 2.2.1 插件自带模板（`@McpPrompt` · 0.6.0）
+
+插件可声明 MCP prompts 模板（宿主拉取后注入系统提示，连接才注入）——适合把工具面口径/使用引导随插件分发：
+
+```kotlin
+@McpPrompt(name = "data-guide", description = "数据面工具口径")
+fun dataGuide(@PromptArg("scope", description = "适用范围") scope: String): String =
+    "数据面口径（{{scope}}）：list_items 检索、get_item 读全文"
+```
+
+细节 = [api.md](./api.md) §2.4；与 @McpTool 分工：工具 = 副作用动词，prompt = 模板文本。
 
 ### 2.3 本地 Maven 仓（同机开发）
 
@@ -128,6 +142,7 @@ contract/build/outputs/aar/goodhub-mcp-contract-release.aar
 - [ ] 超过 5s 的方法标 `@McpTool(async = true)`，用首参 `McpToolContext` 异步回报结果
 - [ ] 需对外暴露的工具标 `visibility = ToolVisibility.SHARED`，其余保持默认 `PRIVATE`（default-deny，漏标即最严）
 - [ ] 允许被宿主动态嵌入（注入外部 LLM 会话）的服务，构造传 `mcpConsumable = true`（默认 `false`，default-deny）
+- [ ] 工具面口径/使用引导随插件分发的，声明 `@McpPrompt` 模板（宿主拉取后注入系统提示，连接才注入）——见 [api.md](./api.md) §2.4
 
 ### 声明服务的可见性与动态嵌入（插件开发者必读）
 

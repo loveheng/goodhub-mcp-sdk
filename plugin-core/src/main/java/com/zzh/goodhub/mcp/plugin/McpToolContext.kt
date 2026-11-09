@@ -88,8 +88,9 @@ class McpToolContext internal constructor(
         service.reverseRequest(method, params)
 
     /**
-     * 借宿主端侧算力执行推理（W5/W6-a，Binder 路径私有 method
-     * `host/onDeviceComplete`，Tier 1 契约）。回程为联合态，统一经
+     * 借宿主端侧算力执行推理（0.5.1 起经标准原语 `ai/complete`——收编迁移，
+     * 私有 method `host/onDeviceComplete` 退役；**宿主须 ≥ 收编版**，旧宿主回
+     * -32601）。回程为联合态，统一经
      * [OnDeviceOutcome.parse] 解析：
      *  - [OnDeviceOutcome.Immediate]：同步产出文本；
      *  - [OnDeviceOutcome.Deferred]：冷态入池回执——`allowDeferred = true` 且宿主任务池

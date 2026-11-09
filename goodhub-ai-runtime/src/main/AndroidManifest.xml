@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AI 消费端传输服务声明（library Manifest 随包合并——业务层零 Manifest 声明，
+     ai-capability-export §3.6「零服务注册」的载体）。发现约定 = thirdconnect
+     §1.2 既有四常量（宿主按 DISCOVERY_ACTION 扫描，meta-data 标识端点）。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <service
+            android:name="com.zzh.goodhub.ai.runtime.AiTransportService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.zzh.goodhub.action.MCP_SERVER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.zzh.goodhub.SERVER_ID"
+                android:value="goodhub-ai-consumer" />
+            <meta-data
+                android:name="com.zzh.goodhub.SERVER_TITLE"
+                android:value="GoodHub AI 消费端" />
+        </service>
+    </application>
+
+</manifest>

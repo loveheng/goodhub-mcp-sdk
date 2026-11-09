@@ -3,7 +3,9 @@ package com.zzh.goodhub.mcp.plugin
 import org.json.JSONObject
 
 /**
- * `host/onDeviceComplete` 反向请求的联合态回执（W6-a 契约，SSOT = goodshare 仓
+ * `ai/complete` 反向请求的联合态回执（收编后形态：0.5.1 起推理入口收口标准
+ * 原语 `ai/complete`——契约 SSOT = goodhub-mcp-sdk api.md §8/§8.7；私有 method
+ * `host/onDeviceComplete` 2026-11-09 退役。联合态解析纪律不变）。
  * `docs/design/ai-app-split.md` §3.11.2 / goodhub 仓 `docs/design/on-device-residency.md` 第七节）。
  *
  * 联合态装进现有 JSON 信封（`:contract` AIDL 不动）：
@@ -36,7 +38,7 @@ sealed class OnDeviceOutcome {
 
     companion object {
         /** 宿主私有反向 method（Tier 1 契约，宿主侧常量同源：`HostOnDeviceToolExecutor.reverseMethodName`）。 */
-        const val REVERSE_METHOD = "host/onDeviceComplete"
+        const val REVERSE_METHOD = "ai/complete"
 
         /**
          * 宿主任务状态反向 method。**注意**：宿主当前仅在导出工具面（`on_device_task_status`，

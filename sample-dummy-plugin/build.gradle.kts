@@ -32,4 +32,9 @@ android {
 dependencies {
     // 契约类（:contract）经 plugin-core 的 api 依赖传递进来，无需重复声明。
     implementation(project(":plugin-core"))
+    // AI 消费面（ai-capability-export M-D aiEcho 靶子）：client API + runtime
+    // 实现（runtime library Manifest 随包声明 AiTransportService——宿主发现
+    // 本 App 两个端点：插件服务 + AI 消费端，消费链经后者回宿主）。
+    implementation(project(":goodhub-ai-client"))
+    implementation(project(":goodhub-ai-runtime"))
 }

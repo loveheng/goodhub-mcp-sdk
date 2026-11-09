@@ -1,5 +1,8 @@
 package com.zzh.goodhub.sample.dummy
 
+import com.zzh.goodhub.ai.AiRequest
+import com.zzh.goodhub.ai.AiSyncResult
+import com.zzh.goodhub.ai.GoodHubAi
 import com.zzh.goodhub.mcp.plugin.GoodHubPluginService
 import com.zzh.goodhub.mcp.plugin.McpTool
 import com.zzh.goodhub.mcp.plugin.McpToolContext
@@ -76,6 +79,39 @@ class DummyPluginService : GoodHubPluginService(
             } else {
                 val text = result?.optJSONObject("content")?.optString("text", "")
                 ctx.complete("sampling result: $text")
+            }
+        }
+    }
+
+    /**
+     * AI 消费面靶子（ai-capability-export M-D）：经 `:goodhub-ai-client` 的
+     * `GoodHubAi.completeSync` 消费宿主 `ai/complete` 原语——全链闭环：
+     * 宿主调本工具 → 本工具反向发 `ai/complete` → 宿主统一受理链（路由/配额/
+     * 隔离/审计）→ 多帧回程（本工具零 progressToken = 零等待通道）→ 结果回宿主。
+     * 失败按结构化码透出（FastFail 快照话术原样，供 e2e 断言十二码）。
+     */
+    @McpTool(
+        description = "AI 靶子：请宿主完成一次单发推理（ai/complete 消费链 e2e）",
+        async = true,
+        readOnlyHint = true
+    )
+    fun aiEcho(
+        ctx: McpToolContext,
+        @Param("instruction", description = "任务指令（做什么、输出什么形状）") instruction: String,
+        @Param("input", description = "待处理原文") input: String
+    ) {
+        val outcome = try {
+            GoodHubAi.get().completeSync(AiRequest(instruction, input))
+        } catch (e: Exception) {
+            ctx.complete("aiEcho error: ${e.javaClass.simpleName}: ${e.message}")
+            return
+        }
+        when (outcome) {
+            is AiSyncResult.Success ->
+                ctx.complete("aiEcho(${(outcome as AiSyncResult.Success).model}): ${(outcome as AiSyncResult.Success).text}")
+            is AiSyncResult.FastFail -> {
+                val f = (outcome as AiSyncResult.FastFail).failure
+                ctx.complete("aiEcho fast-fail[${f.code}]${f.retryAfterMs?.let { " retry_after_ms=$it" } ?: ""}: ${f.message ?: ""}")
             }
         }
     }

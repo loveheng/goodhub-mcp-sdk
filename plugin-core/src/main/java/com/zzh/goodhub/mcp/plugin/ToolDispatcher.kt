@@ -24,6 +24,9 @@ import java.util.concurrent.Executors
  */
 internal class ToolDispatcher(private val service: GoodHubPluginService) {
 
+    /** 声明式 Prompt 分派器（0.6.0 prompts 能力；无 @McpPrompt 时 hasPrompts=false）。 */
+    private val promptDispatcher = PromptDispatcher(service)
+
     private data class ParamMeta(
         val name: String,
         val description: String,
@@ -98,6 +101,11 @@ internal class ToolDispatcher(private val service: GoodHubPluginService) {
                 "initialize" -> initialize(id)
                 "tools/list" -> toolsList(id)
                 "tools/call" -> toolsCall(id, req)
+                // prompts 能力（0.6.0）：声明式 @McpPrompt（无声明时 promptsList 不在场——
+                // 分派回落 -32601，与「宿主未启用 handler → -32601」契约同形）。
+                "prompts/list", "prompts/get" ->
+                    promptDispatcher.handle(method, id, req)
+                        ?: errorFrame(id, McpErrors.METHOD_NOT_FOUND, "prompts 能力未声明（无 @McpPrompt）")
                 else -> errorFrame(id, McpErrors.METHOD_NOT_FOUND, "method not found: $method")
             }
         } catch (e: Exception) {
@@ -109,7 +117,13 @@ internal class ToolDispatcher(private val service: GoodHubPluginService) {
     private fun initialize(id: Any?): String {
         val result = JSONObject().apply {
             put("protocolVersion", McpContract.MCP_PROTOCOL_VERSION)
-            put("capabilities", JSONObject().apply { put("tools", JSONObject()) })
+            put(
+                "capabilities",
+                JSONObject().apply {
+                    put("tools", JSONObject())
+                    promptDispatcher.capabilities()?.let { put("prompts", it) }
+                },
+            )
             put("serverInfo", JSONObject().apply {
                 put("name", service.serverId)
                 put("title", service.serverTitle)
