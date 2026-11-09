@@ -1,0 +1,8 @@
+{
+  "app": "goodshare",
+  "package": "com.zzh.goodshare",
+  "server_id": "goodshare",
+  "expect_shared_tools": [],
+  "forbid_tools": ["add_item", "list_items"],
+  "call_probe": {"tool": "list_items", "arguments": {"limit": 1}}
+}

@@ -79,6 +79,8 @@ val text = GoodHubAi.get().complete(AiRequest(instruction, input)).text
 3. 宿主侧日志锚（`adb logcat | grep AI-CAP`）：`[AI-CAP] caller=<你的包名> skill=ai/complete ... ok`——调用方身份、耗时、路由去向全量审计（恒开）
 4. 取消语义：协程 scope 取消 → 宿主侧 `[AI-CAP]` 出现中断收口、算力即时让槽
 
+**插件侧接入方（供工具的 App）**：真机联调机械验收 = [conformance/](./conformance/README.md)（`run.py` + 你的一份薄配置，A1-A4 四项断言零测试代码）——本清单管 AI 算力消费面，conformance 管插件工具面，两条独立验收。
+
 ## 3. 后台分析形态（deferred 联合态，可选）
 
 适合「发起即返回、宿主空闲时消化」的产品形态（如条目后台摘要）：

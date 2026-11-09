@@ -1,0 +1,8 @@
+{
+  "app": "dummy",
+  "package": "com.zzh.goodhub.sample.dummy",
+  "server_id": "dummy",
+  "expect_shared_tools": ["echo"],
+  "forbid_tools": ["add", "slowEcho", "reverseDemo"],
+  "call_probe": {"tool": "echo", "arguments": {"text": "conformance"}}
+}
