@@ -70,25 +70,28 @@ interface GoodHubAi {
         /** 宿主包名（跨仓常量族，与 Binder 发现同源；goodshare 接缝同款）。 */
         const val hostPackageName = "com.zzh.goodhub"
 
-        /** 发现 Action（值冻结 = 契约仓 McpContract.DISCOVERY_ACTION；runtime 测试钉死）。 */
+        /**
+         * 插件侧发现 Action（值冻结 = 契约仓 `McpContract.DISCOVERY_ACTION`）。
+         * 供消费方随包声明传输服务时使用；**不是**宿主存在性探测的判据——
+         * 宿主包按设计不声明该 Action 的 service，见 [isAvailable] 的探测目标纪律。
+         */
         const val discoveryAction = "com.zzh.goodhub.action.MCP_SERVER"
 
         /**
-         * 静态探测（零 IPC、主线程安全）：PackageManager 查询宿主声明的
-         * MCP 服务——宿主未装 = false。UI 条件渲染入口（无 GoodHub 隐藏
-         * AI 按钮），禁以「调一次挨打碰壁」探测。
+         * 静态探测（零 IPC、主线程安全）：以宿主包的启动 Activity 判定宿主是否安装，
+         * 与 `AiFailure.createResolutionIntent` 同源。UI 条件渲染入口（无 GoodHub
+         * 隐藏 AI 按钮），禁以「调一次挨打碰壁」探测。
          *
-         * 注意：只回答「宿主在不在」，不掺运行时态（模型装载态归运行时通道、
+         * **探测目标纪律**：不得用 [discoveryAction] 查宿主包的 service——`MCP_SERVER`
+         * 是插件侧发现 Action，宿主按设计不声明任何 service，`queryIntentServices`
+         * 恒返回空；包可见性由本库 Manifest 的 `<queries><package>` 保证。
+         *
+         * 只回答「宿主在不在」，不掺运行时态（模型装载态归运行时通道、
          * 授权态归 `UNAUTHORIZED` 码——静态探测掺运行时态 = 状态外泄）。
          */
         @JvmStatic
-        fun isAvailable(context: android.content.Context): Boolean {
-            val pm = context.packageManager
-            val intent = android.content.Intent(discoveryAction)
-                .setPackage(hostPackageName)
-            val resolved = pm.queryIntentServices(intent, 0)
-            return resolved.isNotEmpty()
-        }
+        fun isAvailable(context: android.content.Context): Boolean =
+            context.packageManager.getLaunchIntentForPackage(hostPackageName) != null
 
         /** 入口（零显式初始化：runtime 工件在类加载时自注册实现）。 */
         @JvmStatic

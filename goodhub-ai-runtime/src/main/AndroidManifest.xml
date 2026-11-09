@@ -4,6 +4,15 @@
      §1.2 既有四常量（宿主按 DISCOVERY_ACTION 扫描，meta-data 标识端点）。 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 静态探测（GoodHubAi.isAvailable）的包可见性声明：Android 11+ 未声明
+         queries 时 PackageManager 查宿主包会被过滤，AI 入口恒隐藏。用 package
+         而非 intent：MCP_SERVER 是插件侧发现 Action，宿主不声明该 service。
+         由 runtime 库随包合并（client 保持纯 Kotlin API 面、零 Android 资源）。
+         字面量须与 GoodHubAi.hostPackageName 一致，由 GoodHubAiVisibilityTest 钉死。 -->
+    <queries>
+        <package android:name="com.zzh.goodhub" />
+    </queries>
+
     <application>
         <service
             android:name="com.zzh.goodhub.ai.runtime.AiTransportService"

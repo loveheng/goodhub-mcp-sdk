@@ -17,3 +17,4 @@ local.properties
 # 系统
 .DS_Store
 Thumbs.db
+context/CURRENT
